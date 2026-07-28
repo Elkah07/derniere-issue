@@ -8,6 +8,7 @@ export const defaultSettings = {
   volume: 65,
   vibrations: true,
   reducedMotion: false,
+  cinematicFx: true,
   largeText: false,
   highContrast: false,
   confirmRestart: true,

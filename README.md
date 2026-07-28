@@ -1,29 +1,34 @@
-# Dernière Issue · V0.6 ambiance dynamique
+# Dernière Issue · V0.7 animations cinématiques
 
 Application d’aventures narratives de survie sociale pour **2 à 8 joueurs**.
 
 **Première aventure complète : Le Crash.**
 
-## Nouveautés de la V0.6
+## Nouveautés de la V0.7
 
-- Ambiances de fond générées en temps réel, sans fichier audio externe
-- Univers sonore différent pour chaque chapitre
-- Ambiance spécifique au camp choisi : plage, fuselage ou jungle
-- Feu, craquements, vagues, vent, insectes, pluie, tonnerre, radio et bourdonnement de la station
-- Épilogue sonore plus lumineux ou plus sombre selon l’issue obtenue
-- Effets pour les briefings, choix, révélations, conséquences et transitions de chapitre
-- Sons de compte à rebours pendant les cinq dernières secondes
-- Alerte sonore lorsque le temps expire
-- Réglages séparés pour l’ambiance, les effets et le volume général
-- Bouton flottant pour couper ou réactiver rapidement les sons
-- Fonctionnement intégralement hors ligne grâce à la Web Audio API
-- Toute la V0.5.1 reste présente : embranchements, discussions, trahisons et huit fins auditées
-
-Le détail de l’univers sonore est disponible dans :
-
-```text
-AUDIO.md
-```
+- Décors vivants selon le chapitre et le chemin suivi
+- Pluie, embruns, braises, feuillage, scanlines radio et grille de station animés
+- Secousses, flashs, glitchs et balayages lumineux lors des temps forts
+- Apparitions animées des cartes, choix, jauges et panneaux narratifs
+- Réglage dédié pour couper uniquement les animations cinématiques
+- Phases de **discussion orale** intégrées à 27 scènes
+- Chronos de discussion et de décision
+- Conséquences spécifiques lorsque le temps expire
+- Réglage permettant de désactiver les chronos pour l’accessibilité
+- Promesses publiques enregistrées avant certains choix secrets
+- Promesses tenues ou brisées avec impact sur la cohésion et la confiance
+- Relations de confiance suivies entre chaque paire de joueurs
+- Journal des trahisons ciblées
+- Les joueurs les plus trahis ou les moins fiables peuvent perdre la priorité lors d’une évacuation limitée
+- **12 scènes exclusives** injectées selon les choix importants
+- Le choix du camp, de l’expédition, du jugement et du générateur ouvre réellement des chemins différents
+- Certaines branches retirent totalement des scènes communes devenues inutiles
+- Des actions permettent de voler un joueur précis, l’envoyer sur une fausse piste, contaminer sa gourde, fabriquer une preuve contre lui ou réserver une place à son détriment
+- Bilan final enrichi avec les promesses brisées, les trahisons, les décisions expirées et le chemin réellement suivi
+- Les **8 fins principales sont désormais vérifiées par 8 parcours complets reproductibles**
+- La fin duo exige maintenant une loyauté réelle entre les deux joueurs
+- Attendre une fréquence officielle peut réellement éviter le faux sauvetage
+- Une évacuation qui échoue ne déclenche plus artificiellement la fin volontaire « Ceux qui restent »
 
 ## Structure narrative
 
@@ -72,7 +77,7 @@ Une partie ne joue jamais les 40 événements. Elle construit sa propre séquenc
 - 8 issues principales
 - Épilogues dynamiques et révélation finale
 - Sauvegarde automatique dans le navigateur
-- Migration des sauvegardes antérieures vers la V0.6
+- Migration des sauvegardes V0.3, V0.4 et V0.5 vers la V0.5.1
 
 L’arbre conceptuel initial reste disponible dans :
 

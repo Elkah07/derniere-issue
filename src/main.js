@@ -56,6 +56,12 @@ let ui = {
   lastTimerSoundSecond: null,
 };
 
+let visualState = {
+  lastSceneKey: '',
+  lastCue: '',
+};
+
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -73,6 +79,126 @@ function renderParagraphs(paragraphs, className = 'narrative-copy') {
   return `<div class="${className}">${paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}</div>`;
 }
 
+
+function buildSceneLayer() {
+  return `
+    <div class="scene-gradient"></div>
+    <div class="scene-water"></div>
+    <div class="scene-fog"></div>
+    <div class="scene-rain">${Array.from({ length: 18 }, (_, index) => `<span style="--x:${index * 6}; --d:${8 + (index % 6)}s; --delay:${(index % 5) * -1.3}s"></span>`).join('')}</div>
+    <div class="scene-embers">${Array.from({ length: 14 }, (_, index) => `<span style="--x:${4 + index * 7}; --s:${6 + (index % 4) * 3}px; --d:${10 + (index % 5)}s; --delay:${(index % 4) * -2}s"></span>`).join('')}</div>
+    <div class="scene-leaves">${Array.from({ length: 12 }, (_, index) => `<span style="--x:${index * 8}; --d:${11 + (index % 4)}s; --delay:${(index % 6) * -1.5}s"></span>`).join('')}</div>
+    <div class="scene-scanlines"></div>
+    <div class="scene-grid"></div>
+    <div class="scene-lightning"></div>
+    <div class="scene-spotlight"></div>
+  `;
+}
+
+function ensureSceneLayer() {
+  let layer = document.querySelector('.cinema-layer');
+  if (!layer) {
+    layer = document.createElement('div');
+    layer.className = 'cinema-layer';
+    layer.setAttribute('aria-hidden', 'true');
+    layer.innerHTML = buildSceneLayer();
+    document.body.appendChild(layer);
+  }
+  return layer;
+}
+
+function getSceneDescriptor(screen = ui.screen, game = ui.game, event = currentEvent()) {
+  const classes = [`screen-${screen}`];
+  let scene = 'menu';
+  let cue = 'fade';
+
+  if (['home', 'adventure', 'setup', 'settings', 'rules', 'briefing'].includes(screen)) {
+    if (screen === 'briefing') {
+      scene = 'briefing';
+      cue = 'reveal';
+    } else if (screen === 'adventure' || screen === 'setup') {
+      scene = 'crash';
+    } else {
+      scene = 'menu';
+    }
+    return { key: `${screen}:${scene}`, classes: [...classes, `scene-${scene}`], cue };
+  }
+
+  if (screen === 'ending') {
+    const endingId = game?.ending?.id ?? 'unknown';
+    if (['everyone_home', 'duo_until_end'].includes(endingId)) scene = 'ending-hope';
+    else if (['fake_rescue', 'island_secret'].includes(endingId)) scene = 'ending-unease';
+    else scene = 'ending-dark';
+    return { key: `${screen}:${endingId}`, classes: [...classes, `scene-${scene}`, `ending-${endingId}`], cue: 'ending' };
+  }
+
+  const chapter = event?.chapter ?? 0;
+  if (chapter) classes.push(`chapter-${chapter}`);
+  const shelter = game?.flags?.shelterLocation;
+
+  if (chapter === 1) scene = 'crash';
+  else if (chapter === 2) {
+    if (shelter === 'beach' || (game?.flags?.branchPath ?? []).includes('camp:beach')) scene = 'beach';
+    else if (shelter === 'fuselage' || (game?.flags?.branchPath ?? []).includes('camp:fuselage')) scene = 'fuselage';
+    else scene = 'jungle';
+  } else if (chapter === 3) scene = 'night';
+  else if (chapter === 4) scene = 'jungle';
+  else if (chapter === 5) scene = 'storm';
+  else if (chapter === 6) scene = 'station';
+  else if (chapter === 7) scene = 'evac';
+
+  classes.push(`scene-${scene}`);
+  if (game?.flags?.radioActive || ['radio_voice', 'shore_signal', 'mask_frequency'].includes(event?.id)) classes.push('scene-radio');
+  if (game?.flags?.fuselageRisk) classes.push('scene-fire');
+  if (game?.flags?.atStation || chapter >= 6) classes.push('scene-tech');
+  if (event?.secondary) classes.push('scene-secondary');
+
+  if (screen === 'result') {
+    if (ui.result?.timedOut) cue = 'impact';
+    else if (ui.result?.secret) cue = 'glitch';
+    else cue = 'pulse';
+  } else if (screen === 'chapter') cue = chapter === 1 ? 'impact' : 'fade';
+  else if (screen === 'discussion') cue = 'pulse';
+  else if (screen === 'privateChoice' || screen === 'groupChoice') cue = 'reveal';
+
+  return { key: `${screen}:${event?.id ?? 'none'}:${scene}`, classes, cue };
+}
+
+function triggerVisualCue(cue = 'fade') {
+  if (ui.settings.reducedMotion || ui.settings.cinematicFx === false) return;
+  const activeCue = cue || 'fade';
+  const className = `effect-${activeCue}`;
+  document.body.classList.remove('effect-impact', 'effect-glitch', 'effect-pulse', 'effect-reveal', 'effect-ending', 'effect-fade');
+  void document.body.offsetWidth;
+  document.body.classList.add(className);
+  window.setTimeout(() => document.body.classList.remove(className), activeCue === 'ending' ? 1400 : 820);
+}
+
+function applyStaggers() {
+  const selectors = ['.menu-tile', '.adventure-card', '.player-card', '.choice-card', '.target-card', '.ability-card', '.reveal-player', '.gauge-card'];
+  document.querySelectorAll(selectors.join(',')).forEach((element, index) => {
+    element.style.setProperty('--stagger', String(Math.min(index, 12)));
+  });
+}
+
+function applyVisualTheme() {
+  ensureSceneLayer();
+  const descriptor = getSceneDescriptor();
+  document.body.className = document.body.className
+    .split(' ')
+    .filter((className) => className && !className.startsWith('scene-') && !className.startsWith('screen-') && !className.startsWith('chapter-') && !className.startsWith('ending-') && !className.startsWith('effect-'))
+    .join(' ')
+    .trim();
+  descriptor.classes.forEach((className) => document.body.classList.add(className));
+  document.body.classList.toggle('cinematic-fx-off', ui.settings.cinematicFx === false);
+  app.classList.toggle('cinematic-fx-off', ui.settings.cinematicFx === false);
+  applyStaggers();
+  if (visualState.lastSceneKey !== descriptor.key) {
+    triggerVisualCue(descriptor.cue);
+    visualState.lastSceneKey = descriptor.key;
+  }
+}
+
 function setScreen(screen) {
   ui.screen = screen;
   window.scrollTo({ top: 0, behavior: ui.settings.reducedMotion ? 'auto' : 'smooth' });
@@ -83,6 +209,7 @@ function applySettings() {
   document.documentElement.classList.toggle('reduced-motion', ui.settings.reducedMotion);
   document.documentElement.classList.toggle('large-text', ui.settings.largeText);
   document.documentElement.classList.toggle('high-contrast', ui.settings.highContrast);
+  document.documentElement.classList.toggle('cinematic-disabled', ui.settings.cinematicFx === false);
   audioDirector.configure(ui.settings);
 }
 
@@ -431,7 +558,7 @@ function renderHome() {
         <button class="menu-tile" data-action="settings"><span class="tile-icon">⚙</span><span><strong>Réglages</strong><small>Confort et accessibilité</small></span></button>
         <div class="menu-tile status-tile"><span class="tile-icon">⌁</span><span><strong>Hors ligne</strong><small>Un seul téléphone suffit</small></span></div>
       </nav>
-      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.6</footer>
+      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.7</footer>
     </main>
   `;
 }
@@ -480,7 +607,7 @@ function renderSettings() {
       <header class="topbar"><button class="icon-button" data-action="home">←</button><div><p class="kicker">MENU PRINCIPAL</p><h2>Réglages</h2></div></header>
       <section class="settings-group"><p class="settings-label">AUDIO</p>${settingRow('sound', '♪', 'Univers sonore', 'Active ou coupe tous les sons')}${settingRow('ambience', '≈', 'Ambiances de fond', 'Mer, jungle, feu, pluie, radio et station')}${settingRow('sfx', '✦', 'Effets sonores', 'Choix, révélations, conséquences et chronos')}${volumeRow()}<button class="settings-action audio-preview" data-action="audio-preview"><span>Tester l’ambiance actuelle</span><b>▶</b></button></section>
       <section class="settings-group"><p class="settings-label">JEU</p>${settingRow('vibrations', '⌁', 'Vibrations', 'Retour tactile pendant les choix')}${settingRow('timers', '⏳', 'Chronos narratifs', 'Décisions sous pression et conséquences en cas d’inaction')}${settingRow('confirmRestart', '↺', 'Confirmer avant de recommencer', 'Évite d’effacer une partie par erreur')}</section>
-      <section class="settings-group"><p class="settings-label">ACCESSIBILITÉ</p>${settingRow('largeText', 'Aa', 'Texte agrandi', 'Améliore la lisibilité')}${settingRow('highContrast', '◐', 'Contraste renforcé', 'Éclaircit les textes et contours')}${settingRow('reducedMotion', '◌', 'Réduire les animations', 'Limite les mouvements')}</section>
+      <section class="settings-group"><p class="settings-label">ACCESSIBILITÉ</p>${settingRow('largeText', 'Aa', 'Texte agrandi', 'Améliore la lisibilité')}${settingRow('highContrast', '◐', 'Contraste renforcé', 'Éclaircit les textes et contours')}${settingRow('cinematicFx', '✺', 'Animations cinématiques', 'Décors vivants, secousses, pluie, glitch et transitions')}${settingRow('reducedMotion', '◌', 'Réduire les animations', 'Limite les mouvements')}</section>
       <section class="settings-group danger-zone"><p class="settings-label">DONNÉES</p>${ui.game ? '<button class="settings-action danger-text" data-action="delete-save"><span>Supprimer la partie en cours</span><b>›</b></button>' : '<div class="settings-empty">Aucune partie sauvegardée.</div>'}<button class="settings-action" data-action="reset-settings"><span>Réinitialiser les réglages</span><b>›</b></button></section>
       <p class="settings-note">La partie reste enregistrée uniquement dans ce navigateur.</p>
     </main>`;
@@ -695,6 +822,7 @@ function render() {
   if (ui.screen === 'result') renderResult();
   if (ui.screen === 'abilities') renderAbilities();
   if (ui.screen === 'ending') renderEnding();
+  applyVisualTheme();
   audioDirector.sync({ screen: ui.screen, game: ui.game, event: currentEvent(), settings: ui.settings });
   renderAudioControl();
 }

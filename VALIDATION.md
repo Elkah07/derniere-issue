@@ -1,6 +1,8 @@
-# Validation V0.6
+## Validation V0.7
 
-- Version : 0.6.0
+# Validation V0.5.1
+
+- Version : 0.5.1
 - 40 événements enregistrés
 - 12 événements de branche exclusifs
 - 27 scènes avec discussion orale chronométrée
@@ -10,13 +12,8 @@
 - Matrice de confiance entre tous les joueurs
 - Journal des trahisons et des promesses
 - Migration automatique des sauvegardes antérieures
-- 13 thèmes sonores dynamiques
-- 3 variantes audio exclusives pour le choix du camp
-- 10 familles d’effets sonores procéduraux
-- aucun fichier audio externe ni dépendance réseau
-- réglages persistants : son global, ambiance, effets et volume
 - **8 fins sur 8 atteignables par un parcours complet reproductible**
-- **35 tests automatisés validés**
+- **32 tests automatisés validés**
 - 45 simulations aléatoires complètes sans blocage
 - 9 simulations supplémentaires où tous les chronos expirent
 - 54 simulations générales complètes, auxquelles s’ajoutent 8 parcours dédiés aux fins
@@ -62,11 +59,3 @@ Chaque issue possède désormais un test qui joue une partie entière depuis le 
 npm run check
 npm test
 ```
-
-## Validation audio
-
-- sélection du thème vérifiée pour les chapitres 1, 3, 6 et 7 ;
-- sélection distincte vérifiée pour la plage, le fuselage et la jungle ;
-- ambiance finale claire ou sombre vérifiée selon l’issue ;
-- syntaxe du moteur audio vérifiée par `node --check` ;
-- démarrage différé prévu pour respecter les restrictions audio des navigateurs.
