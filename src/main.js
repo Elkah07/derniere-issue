@@ -1,6 +1,13 @@
 import { events, setupOptions } from './gameData.js';
 import { createInitialGame, resolveEvent } from './gameEngine.js';
-import { clearGame, loadGame, saveGame } from './storage.js';
+import {
+  clearGame,
+  loadGame,
+  loadSettings,
+  resetSettings,
+  saveGame,
+  saveSettings,
+} from './storage.js';
 
 const app = document.querySelector('#app');
 
@@ -19,6 +26,7 @@ let ui = {
   result: null,
   selectedGroupChoice: null,
   volunteerId: null,
+  settings: loadSettings(),
 };
 
 function escapeHtml(value) {
@@ -36,6 +44,21 @@ function clamp(value, min, max) {
 
 function setScreen(screen) {
   ui.screen = screen;
+  window.scrollTo({ top: 0, behavior: ui.settings.reducedMotion ? 'auto' : 'smooth' });
+  render();
+}
+
+function applySettings() {
+  document.documentElement.classList.toggle('reduced-motion', ui.settings.reducedMotion);
+  document.documentElement.classList.toggle('large-text', ui.settings.largeText);
+  document.documentElement.classList.toggle('high-contrast', ui.settings.highContrast);
+}
+
+function toggleSetting(key) {
+  ui.settings[key] = !ui.settings[key];
+  saveSettings(ui.settings);
+  applySettings();
+  if (key === 'vibrations' && ui.settings.vibrations && navigator.vibrate) navigator.vibrate(35);
   render();
 }
 
@@ -131,22 +154,108 @@ function gaugeCard(icon, label, value, min = 0) {
 
 function renderHome() {
   const hasSave = Boolean(ui.game);
+  const progress = hasSave
+    ? `${ui.game.chapterComplete ? 3 : Math.min((ui.game.eventIndex ?? 0) + 1, 3)}/3 événements`
+    : 'Aucune partie en cours';
   app.innerHTML = `
-    <main class="shell hero-shell">
-      <section class="hero-card">
+    <main class="menu-shell">
+      <header class="menu-brand">
         <div class="brand-mark">✈</div>
-        <p class="kicker">AVENTURES NARRATIVES · 2 À 8 JOUEURS</p>
-        <h1>DERNIÈRE<br><span>ISSUE</span></h1>
-        <p class="adventure-label">AVENTURE 01 · LE CRASH</p>
-        <p class="hero-copy">
-          Survivre sera difficile. Faire confiance aux autres pourrait l’être encore plus.
-        </p>
-        <div class="hero-actions">
-          <button class="button primary" data-action="new-game">Nouvelle partie</button>
-          ${hasSave ? '<button class="button secondary" data-action="resume">Reprendre la partie</button>' : ''}
+        <div><p class="kicker">AVENTURES NARRATIVES</p><strong>DERNIÈRE <span>ISSUE</span></strong></div>
+        <button class="icon-button" data-action="settings" aria-label="Ouvrir les réglages">⚙</button>
+      </header>
+
+      <section class="featured-adventure">
+        <div class="adventure-visual" aria-hidden="true">
+          <span class="visual-sun"></span><span class="visual-plane">✈</span>
+          <span class="visual-island"></span>
         </div>
-        <p class="prototype-note">Prototype V0.1 · Chapitre 1 jouable · Sauvegarde automatique</p>
+        <div class="adventure-content">
+          <div class="adventure-meta"><span>AVENTURE 01</span><span>2–8 JOUEURS</span></div>
+          <h1>LE<br><span>CRASH</span></h1>
+          <p>Votre avion s’écrase sur une île inconnue. Chaque décision peut sauver le groupe… ou le briser.</p>
+          ${hasSave ? `
+            <button class="button primary resume-button" data-action="resume">
+              <span><small>PARTIE EN COURS</small>Reprendre l’aventure</span><b>›</b>
+            </button>
+            <div class="save-progress"><span style="width:${ui.game.chapterComplete ? 100 : ((ui.game.eventIndex ?? 0) / 3) * 100}%"></span></div>
+            <p class="save-caption">${progress} · Sauvegarde automatique</p>
+          ` : '<button class="button primary" data-action="new-game">Commencer l’aventure</button>'}
+        </div>
       </section>
+
+      <nav class="menu-grid" aria-label="Menu principal">
+        <button class="menu-tile" data-action="new-game"><span class="tile-icon">＋</span><span><strong>Nouvelle partie</strong><small>Créer un nouvel équipage</small></span></button>
+        <button class="menu-tile" data-action="rules"><span class="tile-icon">?</span><span><strong>Comment jouer</strong><small>Principe et conseils</small></span></button>
+        <button class="menu-tile" data-action="settings"><span class="tile-icon">⚙</span><span><strong>Réglages</strong><small>Confort et accessibilité</small></span></button>
+        <div class="menu-tile status-tile"><span class="tile-icon">⌁</span><span><strong>Hors ligne</strong><small>Jouez sur un seul téléphone</small></span></div>
+      </nav>
+
+      <footer class="menu-footer">VERSION 0.1 · LE CRASH</footer>
+    </main>
+  `;
+}
+
+function settingRow(key, icon, title, description) {
+  const enabled = ui.settings[key];
+  return `
+    <button class="setting-row" data-setting="${key}" role="switch" aria-checked="${enabled}">
+      <span class="setting-icon">${icon}</span>
+      <span class="setting-copy"><strong>${title}</strong><small>${description}</small></span>
+      <span class="switch ${enabled ? 'on' : ''}"><i></i></span>
+    </button>
+  `;
+}
+
+function renderSettings() {
+  app.innerHTML = `
+    <main class="shell settings-shell">
+      <header class="topbar">
+        <button class="icon-button" data-action="home" aria-label="Retour au menu">←</button>
+        <div><p class="kicker">MENU PRINCIPAL</p><h2>Réglages</h2></div>
+      </header>
+
+      <section class="settings-group">
+        <p class="settings-label">JEU</p>
+        ${settingRow('sound', '♪', 'Sons du jeu', 'Effets sonores et ambiance')}
+        ${settingRow('vibrations', '⌁', 'Vibrations', 'Retour tactile pendant les choix')}
+        ${settingRow('confirmRestart', '↺', 'Confirmer avant de recommencer', 'Évite d’effacer une partie par erreur')}
+      </section>
+
+      <section class="settings-group">
+        <p class="settings-label">ACCESSIBILITÉ</p>
+        ${settingRow('largeText', 'Aa', 'Texte agrandi', 'Améliore la lisibilité des histoires')}
+        ${settingRow('highContrast', '◐', 'Contraste renforcé', 'Éclaircit les textes et les contours')}
+        ${settingRow('reducedMotion', '◌', 'Réduire les animations', 'Limite les mouvements de l’interface')}
+      </section>
+
+      <section class="settings-group danger-zone">
+        <p class="settings-label">DONNÉES</p>
+        ${ui.game ? '<button class="settings-action danger-text" data-action="delete-save"><span>Supprimer la partie en cours</span><b>›</b></button>' : '<div class="settings-empty">Aucune partie sauvegardée.</div>'}
+        <button class="settings-action" data-action="reset-settings"><span>Réinitialiser les réglages</span><b>›</b></button>
+      </section>
+      <p class="settings-note">Les réglages et la partie sont enregistrés uniquement sur cet appareil.</p>
+    </main>
+  `;
+}
+
+function renderRules() {
+  app.innerHTML = `
+    <main class="shell rules-shell">
+      <header class="topbar">
+        <button class="icon-button" data-action="home" aria-label="Retour au menu">←</button>
+        <div><p class="kicker">LE CRASH</p><h2>Comment jouer</h2></div>
+      </header>
+      <section class="rules-hero panel">
+        <span>2–8</span><div><strong>Un téléphone suffit</strong><p>Installez-vous ensemble et faites circuler l’appareil lors des choix secrets.</p></div>
+      </section>
+      <section class="rules-list">
+        <article><b>01</b><div><h3>Découvrez l’histoire</h3><p>Chaque chapitre confronte votre groupe à des événements et des décisions.</p></div></article>
+        <article><b>02</b><div><h3>Choisissez sans tout révéler</h3><p>Certains choix sont collectifs, d’autres sont secrets et personnels.</p></div></article>
+        <article><b>03</b><div><h3>Survivez aux conséquences</h3><p>Vos vies, ressources, objets et relations évoluent selon vos décisions.</p></div></article>
+      </section>
+      <div class="tip-card"><span>!</span><p><strong>Conseil</strong> Ne lisez jamais l’écran d’un autre joueur pendant un choix secret.</p></div>
+      <button class="button primary" data-action="new-game">Préparer l’équipage</button>
     </main>
   `;
 }
@@ -397,7 +506,10 @@ function renderChapterComplete() {
 }
 
 function render() {
+  applySettings();
   if (ui.screen === 'home') renderHome();
+  if (ui.screen === 'settings') renderSettings();
+  if (ui.screen === 'rules') renderRules();
   if (ui.screen === 'setup') renderSetup();
   if (ui.screen === 'game') renderGame();
   if (ui.screen === 'privateChoice') renderPrivateChoice();
@@ -412,6 +524,8 @@ app.addEventListener('click', (event) => {
   const action = target.dataset.action;
 
   if (action === 'new-game') setScreen('setup');
+  if (action === 'settings') setScreen('settings');
+  if (action === 'rules') setScreen('rules');
   if (action === 'resume') setScreen(ui.game.chapterComplete ? 'game' : 'game');
   if (action === 'home') setScreen('home');
   if (action === 'less-player') {
@@ -439,8 +553,24 @@ app.addEventListener('click', (event) => {
     startNewGame();
   }
   if (action === 'reset') {
-    if (confirm('Recommencer cette partie depuis le début ?')) resetRun();
+    if (!ui.settings.confirmRestart || confirm('Recommencer cette partie depuis le début ?')) resetRun();
   }
+  if (action === 'delete-save') {
+    if (confirm('Supprimer définitivement la partie en cours ?')) {
+      clearGame();
+      ui.game = null;
+      render();
+    }
+  }
+  if (action === 'reset-settings') {
+    if (confirm('Réinitialiser tous les réglages ?')) {
+      ui.settings = resetSettings();
+      applySettings();
+      render();
+    }
+  }
+
+  if (target.dataset.setting) toggleSetting(target.dataset.setting);
 
   if (target.dataset.duration) {
     ui.setup.duration = target.dataset.duration;
