@@ -1,3 +1,4 @@
+import { audioDirector } from './audio.js';
 import { chapters, events, getEventById, setupOptions } from './gameData.js';
 import { getChapterNarrative, getEndingNarrative, getEventNarrative, getResultNarrative, getStoryEchoes } from './narrative.js';
 import {
@@ -52,6 +53,7 @@ let ui = {
   timerDeadline: null,
   timerRemaining: null,
   timerPhase: null,
+  lastTimerSoundSecond: null,
 };
 
 function escapeHtml(value) {
@@ -81,6 +83,7 @@ function applySettings() {
   document.documentElement.classList.toggle('reduced-motion', ui.settings.reducedMotion);
   document.documentElement.classList.toggle('large-text', ui.settings.largeText);
   document.documentElement.classList.toggle('high-contrast', ui.settings.highContrast);
+  audioDirector.configure(ui.settings);
 }
 
 function toggleSetting(key) {
@@ -88,6 +91,7 @@ function toggleSetting(key) {
   saveSettings(ui.settings);
   applySettings();
   if (key === 'vibrations' && ui.settings.vibrations && navigator.vibrate) navigator.vibrate(35);
+  if (key === 'sound' && ui.settings.sound) audioDirector.unlock().then(() => audioDirector.play('reveal', 0.55));
   render();
 }
 
@@ -98,6 +102,7 @@ function clearCountdown() {
   ui.timerDeadline = null;
   ui.timerRemaining = null;
   ui.timerPhase = null;
+  ui.lastTimerSoundSecond = null;
   document.documentElement.classList.toggle('countdown-critical', false);
 }
 
@@ -125,9 +130,14 @@ function startCountdown(seconds, phase, onExpire) {
   const tick = () => {
     ui.timerRemaining = Math.max(0, Math.ceil((ui.timerDeadline - Date.now()) / 1000));
     updateCountdownDom();
+    if (ui.timerRemaining > 0 && ui.timerRemaining <= 5 && ui.lastTimerSoundSecond !== ui.timerRemaining) {
+      ui.lastTimerSoundSecond = ui.timerRemaining;
+      audioDirector.play('tick', 6 - ui.timerRemaining);
+    }
     if (ui.timerRemaining <= 0) {
       clearCountdown();
       if (ui.settings.vibrations && navigator.vibrate) navigator.vibrate([120, 70, 120]);
+      audioDirector.play('timeout', 1);
       onExpire();
     }
   };
@@ -266,6 +276,11 @@ function currentPrivatePlayer() {
   return ui.game.players.find((player) => player.id === id) ?? ui.game.players[0];
 }
 
+function playResolutionAudio(result) {
+  if (!result || result.timedOut) return;
+  audioDirector.play(result.secret ? 'secret' : 'result', result.secret ? 0.8 : 1);
+}
+
 function submitPrivateChoice(choiceId, selectedTargetId = null, timedOut = false) {
   clearCountdown();
   const player = currentPrivatePlayer();
@@ -278,6 +293,7 @@ function submitPrivateChoice(choiceId, selectedTargetId = null, timedOut = false
     const { game, result } = resolveEvent(ui.game, currentEvent().id, ui.draftChoices, { timeout: ui.timedOutIds.length > 0, timedOutIds: ui.timedOutIds });
     ui.game = game;
     ui.result = result;
+    playResolutionAudio(result);
     saveGame(ui.game);
     setScreen('result');
     return;
@@ -307,6 +323,7 @@ function submitGroupChoice() {
   );
   ui.game = game;
   ui.result = result;
+  playResolutionAudio(result);
   saveGame(ui.game);
   setScreen('result');
 }
@@ -414,7 +431,7 @@ function renderHome() {
         <button class="menu-tile" data-action="settings"><span class="tile-icon">⚙</span><span><strong>Réglages</strong><small>Confort et accessibilité</small></span></button>
         <div class="menu-tile status-tile"><span class="tile-icon">⌁</span><span><strong>Hors ligne</strong><small>Un seul téléphone suffit</small></span></div>
       </nav>
-      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.5.1</footer>
+      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.6</footer>
     </main>
   `;
 }
@@ -452,11 +469,17 @@ function settingRow(key, icon, title, description) {
   return `<button class="setting-row" data-setting="${key}" role="switch" aria-checked="${enabled}"><span class="setting-icon">${icon}</span><span class="setting-copy"><strong>${title}</strong><small>${description}</small></span><span class="switch ${enabled ? 'on' : ''}"><i></i></span></button>`;
 }
 
+function volumeRow() {
+  const value = Number(ui.settings.volume ?? 65);
+  return `<label class="volume-row"><span class="setting-icon">◖</span><span class="setting-copy"><strong>Volume général</strong><small>Ambiance et effets sonores</small></span><span class="volume-control"><input type="range" min="0" max="100" step="5" value="${value}" data-volume aria-label="Volume général"><b data-volume-value>${value}%</b></span></label>`;
+}
+
 function renderSettings() {
   app.innerHTML = `
     <main class="shell settings-shell">
       <header class="topbar"><button class="icon-button" data-action="home">←</button><div><p class="kicker">MENU PRINCIPAL</p><h2>Réglages</h2></div></header>
-      <section class="settings-group"><p class="settings-label">JEU</p>${settingRow('sound', '♪', 'Sons du jeu', 'Effets sonores et ambiance')}${settingRow('vibrations', '⌁', 'Vibrations', 'Retour tactile pendant les choix')}${settingRow('timers', '⏳', 'Chronos narratifs', 'Décisions sous pression et conséquences en cas d’inaction')}${settingRow('confirmRestart', '↺', 'Confirmer avant de recommencer', 'Évite d’effacer une partie par erreur')}</section>
+      <section class="settings-group"><p class="settings-label">AUDIO</p>${settingRow('sound', '♪', 'Univers sonore', 'Active ou coupe tous les sons')}${settingRow('ambience', '≈', 'Ambiances de fond', 'Mer, jungle, feu, pluie, radio et station')}${settingRow('sfx', '✦', 'Effets sonores', 'Choix, révélations, conséquences et chronos')}${volumeRow()}<button class="settings-action audio-preview" data-action="audio-preview"><span>Tester l’ambiance actuelle</span><b>▶</b></button></section>
+      <section class="settings-group"><p class="settings-label">JEU</p>${settingRow('vibrations', '⌁', 'Vibrations', 'Retour tactile pendant les choix')}${settingRow('timers', '⏳', 'Chronos narratifs', 'Décisions sous pression et conséquences en cas d’inaction')}${settingRow('confirmRestart', '↺', 'Confirmer avant de recommencer', 'Évite d’effacer une partie par erreur')}</section>
       <section class="settings-group"><p class="settings-label">ACCESSIBILITÉ</p>${settingRow('largeText', 'Aa', 'Texte agrandi', 'Améliore la lisibilité')}${settingRow('highContrast', '◐', 'Contraste renforcé', 'Éclaircit les textes et contours')}${settingRow('reducedMotion', '◌', 'Réduire les animations', 'Limite les mouvements')}</section>
       <section class="settings-group danger-zone"><p class="settings-label">DONNÉES</p>${ui.game ? '<button class="settings-action danger-text" data-action="delete-save"><span>Supprimer la partie en cours</span><b>›</b></button>' : '<div class="settings-empty">Aucune partie sauvegardée.</div>'}<button class="settings-action" data-action="reset-settings"><span>Réinitialiser les réglages</span><b>›</b></button></section>
       <p class="settings-note">La partie reste enregistrée uniquement dans ce navigateur.</p>
@@ -650,6 +673,12 @@ function renderEnding() {
     </main>`;
 }
 
+function renderAudioControl() {
+  const enabled = ui.settings.sound;
+  const label = enabled ? audioDirector.getThemeLabel() : 'Sons coupés';
+  app.insertAdjacentHTML('beforeend', `<button class="audio-fab ${enabled ? 'active' : 'muted'}" data-action="toggle-sound" aria-label="${enabled ? 'Couper les sons' : 'Activer les sons'}" title="${escapeHtml(label)}"><span>${enabled ? '♪' : '×'}</span><small>${escapeHtml(label)}</small></button>`);
+}
+
 function render() {
   applySettings();
   if (ui.screen === 'home') renderHome();
@@ -666,13 +695,31 @@ function render() {
   if (ui.screen === 'result') renderResult();
   if (ui.screen === 'abilities') renderAbilities();
   if (ui.screen === 'ending') renderEnding();
+  audioDirector.sync({ screen: ui.screen, game: ui.game, event: currentEvent(), settings: ui.settings });
+  renderAudioControl();
 }
 
 app.addEventListener('click', (event) => {
   const target = event.target.closest('button');
   if (!target) return;
   const action = target.dataset.action;
+  audioDirector.unlock().then((ready) => {
+    if (ready && action !== 'audio-preview' && action !== 'toggle-sound') audioDirector.play('click', 0.55);
+  });
   if (['new-game', 'open-crash', 'settings', 'rules', 'home', 'finish-home', 'replay', 'reset', 'delete-save'].includes(action)) clearCountdown();
+
+  if (action === 'toggle-sound') {
+    toggleSetting('sound');
+    return;
+  }
+  if (action === 'audio-preview') {
+    audioDirector.unlock().then((ready) => {
+      if (ready) {
+        audioDirector.sync({ screen: ui.screen, game: ui.game, event: currentEvent(), settings: ui.settings });
+        audioDirector.play('reveal', 0.9);
+      }
+    });
+  }
 
   if (action === 'new-game') setScreen('setup');
   if (action === 'open-crash') setScreen('adventure');
@@ -690,8 +737,9 @@ app.addEventListener('click', (event) => {
     while (ui.setup.names.length < ui.setup.playerCount) ui.setup.names.push(`Joueur ${ui.setup.names.length + 1}`);
     render();
   }
-  if (action === 'start-game') startNewGame();
+  if (action === 'start-game') { audioDirector.play('reveal', 0.8); startNewGame(); }
   if (action === 'reveal-briefing') {
+    audioDirector.play('reveal', 0.85);
     ui.briefingReady = true;
     render();
   }
@@ -700,15 +748,17 @@ app.addEventListener('click', (event) => {
     if (ui.briefingIndex >= ui.game.players.length - 1) {
       ui.game.briefingComplete = true;
       saveGame(ui.game);
+      audioDirector.play('chapter', 0.9);
       setScreen('chapter');
     } else {
       ui.briefingIndex += 1;
       render();
     }
   }
-  if (action === 'enter-chapter') enterChapter();
+  if (action === 'enter-chapter') { audioDirector.play('chapter', 0.9); enterChapter(); }
   if (action === 'begin-event') beginEvent();
   if (action === 'ready-private') {
+    audioDirector.play('reveal', 0.5);
     ui.passReady = true;
     render();
     startCountdown(currentEvent()?.decisionSeconds ?? 20, 'private-decision', submitPrivateTimeout);
@@ -721,7 +771,7 @@ app.addEventListener('click', (event) => {
   }
   if (action === 'confirm-group') submitGroupChoice();
   if (action === 'continue') {
-    if (ui.game.complete) setScreen('ending');
+    if (ui.game.complete) { audioDirector.play('ending', 1); setScreen('ending'); }
     else if (ui.game.chapterTransition) setScreen('chapter');
     else setScreen('game');
   }
@@ -750,14 +800,16 @@ app.addEventListener('click', (event) => {
   }
 
   if (target.dataset.choice) {
+    audioDirector.play('select', 0.75);
     const choice = getAvailableChoices(ui.game, currentEvent(), currentPrivatePlayer().id).find((item) => item.id === target.dataset.choice);
     if (choice?.requiresTarget) {
       ui.pendingChoice = choice.id;
       render();
     } else submitPrivateChoice(target.dataset.choice);
   }
-  if (target.dataset.targetPlayer) submitPrivateChoice(ui.pendingChoice, target.dataset.targetPlayer);
+  if (target.dataset.targetPlayer) { audioDirector.play('select', 0.75); submitPrivateChoice(ui.pendingChoice, target.dataset.targetPlayer); }
   if (target.dataset.groupChoice) {
+    audioDirector.play('select', 0.75);
     ui.selectedGroupChoice = target.dataset.groupChoice;
     const selected = currentEvent().choices.find((choice) => choice.id === ui.selectedGroupChoice);
     if (selected?.requiresActor && !ui.actorId) ui.actorId = ui.game.players[0]?.id;
@@ -769,6 +821,13 @@ app.addEventListener('click', (event) => {
 app.addEventListener('input', (event) => {
   const index = event.target.dataset.playerName;
   if (index !== undefined) ui.setup.names[Number(index)] = event.target.value;
+  if (event.target.matches('[data-volume]')) {
+    ui.settings.volume = Number(event.target.value);
+    saveSettings(ui.settings);
+    audioDirector.configure(ui.settings);
+    const label = document.querySelector('[data-volume-value]');
+    if (label) label.textContent = `${ui.settings.volume}%`;
+  }
 });
 
 app.addEventListener('change', (event) => {

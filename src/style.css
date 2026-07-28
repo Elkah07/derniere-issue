@@ -1064,3 +1064,69 @@ button { font: inherit; }
   color: #eadbd6;
   line-height: 1.5;
 }
+
+/* V0.6 · Univers sonore */
+.volume-row {
+  width: 100%;
+  min-height: 88px;
+  display: grid;
+  grid-template-columns: 42px 1fr minmax(150px, 220px);
+  align-items: center;
+  gap: 12px;
+  padding: 13px 18px;
+  border-top: 1px solid var(--line);
+  color: #fff;
+}
+.volume-control { display: grid; grid-template-columns: 1fr 46px; align-items: center; gap: 10px; }
+.volume-control input { width: 100%; accent-color: var(--lime); cursor: pointer; }
+.volume-control b { color: var(--lime); text-align: right; font-size: .74rem; }
+.audio-preview b { color: var(--lime); }
+.audio-fab {
+  position: fixed;
+  z-index: 100;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  max-width: min(220px, calc(100vw - 28px));
+  min-height: 45px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px 7px 7px;
+  border: 1px solid rgba(199, 239, 90, .26);
+  border-radius: 99px;
+  color: #f6faef;
+  background: rgba(5, 21, 18, .9);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, .38);
+  backdrop-filter: blur(13px);
+  cursor: pointer;
+}
+.audio-fab > span {
+  flex: 0 0 auto;
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #102218;
+  background: var(--lime);
+  font-weight: 1000;
+}
+.audio-fab small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: .62rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audio-fab.muted { border-color: rgba(255, 120, 95, .25); }
+.audio-fab.muted > span { color: #2a130f; background: #ff8e78; }
+.audio-fab:hover { transform: translateY(-1px); border-color: rgba(199, 239, 90, .55); }
+.reduced-motion .audio-fab:hover { transform: none; }
+
+@media (max-width: 560px) {
+  .volume-row { grid-template-columns: 42px 1fr; }
+  .volume-control { grid-column: 2; width: 100%; }
+  .audio-fab { max-width: 48px; width: 48px; height: 48px; padding: 7px; }
+  .audio-fab small { display: none; }
+}

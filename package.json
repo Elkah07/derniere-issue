@@ -1,10 +1,10 @@
 {
   "name": "derniere-issue",
   "private": true,
-  "version": "0.5.1",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/main.js && node --check src/gameEngine.js && node --check src/gameData.js && node --check src/narrative.js"
+    "check": "node --check src/main.js && node --check src/audio.js && node --check src/gameEngine.js && node --check src/gameData.js && node --check src/narrative.js"
   }
 }

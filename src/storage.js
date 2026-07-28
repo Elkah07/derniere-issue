@@ -3,6 +3,9 @@ const SETTINGS_KEY = 'derniere-issue-settings-v01';
 
 export const defaultSettings = {
   sound: true,
+  ambience: true,
+  sfx: true,
+  volume: 65,
   vibrations: true,
   reducedMotion: false,
   largeText: false,
