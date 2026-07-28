@@ -1,24 +1,19 @@
-# Validation de Dernière Issue V0.3
+# Validation V0.4 immersive
 
-## Vérifications exécutées
+- Version : 0.4.0
+- Couche narrative dédiée : `src/narrative.js`
+- Volume narratif du module : 6421 mots environ
+- 7 introductions de chapitres développées et dynamiques
+- 28 scènes d’événements enrichies
+- Conséquences personnalisées pour les 21 événements principaux
+- Épilogues dynamiques pour les 8 issues
+- Migration automatique des sauvegardes V0.3 vers V0.4
+- 15 tests automatisés validés
+- 45 parties complètes simulées sans blocage
 
-- Vérification syntaxique de `src/main.js`
-- Vérification syntaxique de `src/gameEngine.js`
-- Vérification syntaxique de `src/gameData.js`
-- 11 tests automatisés réussis
-- 45 simulations déterministes complètes
-- Simulations avec 2, 4 et 8 joueurs
-- Simulations en durée courte, normale et longue
-- Vérification de la migration d’une sauvegarde V0.1 arrêtée après le chapitre 1
-- Vérification du rendu initial de l’interface avec un environnement DOM simulé
-
-## Commandes
+## Commandes de validation
 
 ```bash
 npm run check
 npm test
 ```
-
-## Résultat
-
-La progression atteint correctement une issue finale dans les trois durées et pour les différentes tailles de groupe testées.

@@ -182,7 +182,7 @@ export function createInitialGame({ names, duration = 'normal', audience = 'all'
   const radioListener = pick(players, random)?.id ?? players[0].id;
 
   return {
-    version: 3,
+    version: 4,
     createdAt: new Date().toISOString(),
     settings: { duration, audience },
     players,
@@ -231,7 +231,12 @@ export function createInitialGame({ names, duration = 'normal', audience = 'all'
 
 export function upgradeSavedGame(saved) {
   if (!saved) return null;
-  if (saved.version >= 3 && Array.isArray(saved.eventSequence)) return saved;
+  if (saved.version >= 4 && Array.isArray(saved.eventSequence)) return saved;
+  if (saved.version === 3 && Array.isArray(saved.eventSequence)) {
+    const upgraded = clone(saved);
+    upgraded.version = 4;
+    return upgraded;
+  }
 
   const migrated = createInitialGame({
     names: saved.players?.map((player) => player.name) ?? ['Joueur 1', 'Joueur 2'],
@@ -458,7 +463,7 @@ export function resolveEvent(game, eventId, choices, extra = {}) {
   const next = clone(game);
   const event = getEventById(eventId);
   if (!event) throw new Error(`Événement inconnu : ${eventId}`);
-  const result = { title: event.title, summary: [], secret: false };
+  const result = { eventId, chapter: event.chapter, title: event.title, summary: [], secret: false };
   const ids = Object.values(choices).map(choiceId);
   const actor = next.players.find((player) => player.id === (extra.actorId ?? extra.volunteerId));
 

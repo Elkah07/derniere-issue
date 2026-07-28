@@ -705,3 +705,106 @@ button { font: inherit; }
   .ability-icon { width: 48px; height: 48px; }
   .ending-lists { grid-template-columns: 1fr; }
 }
+
+/* V0.4 · couche narrative immersive */
+.chapter-narrative,
+.event-narrative,
+.result-narrative,
+.ending-epilogue {
+  display: grid;
+  gap: .85rem;
+  text-align: left;
+}
+
+.chapter-narrative p,
+.event-narrative p,
+.result-narrative p,
+.ending-epilogue p {
+  margin: 0;
+  line-height: 1.72;
+}
+
+.chapter-narrative {
+  max-width: 720px;
+  margin: 1.1rem auto 0;
+  padding: 1rem 1.1rem;
+  border-left: 3px solid var(--accent, #d7a85b);
+  background: rgba(255, 255, 255, .045);
+  border-radius: 0 14px 14px 0;
+}
+
+.event-narrative {
+  margin: 1rem 0 1.3rem;
+  font-size: 1.02rem;
+}
+
+.event-narrative p:first-child::first-letter,
+.chapter-narrative p:first-child::first-letter,
+.ending-epilogue p:first-child::first-letter {
+  float: left;
+  font-size: 2.7rem;
+  line-height: .82;
+  margin: .18rem .42rem 0 0;
+  font-family: Georgia, serif;
+  color: var(--accent, #d7a85b);
+}
+
+.result-narrative {
+  margin: 1rem 0 1.2rem;
+  padding: 1rem 1.1rem;
+  background: rgba(255, 255, 255, .04);
+  border-radius: 14px;
+}
+
+.mechanical-impact {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, .12);
+  text-align: left;
+}
+
+.mechanical-impact > strong {
+  display: block;
+  margin-bottom: .65rem;
+  color: var(--accent, #d7a85b);
+  font-size: .78rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.mechanical-impact ul {
+  margin: 0;
+  padding-left: 1.15rem;
+}
+
+.mechanical-impact li + li { margin-top: .4rem; }
+
+.ending-epilogue {
+  max-width: 780px;
+  margin: 1.2rem auto 0;
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, .045);
+  border-radius: 18px;
+}
+
+.memory-panel {
+  padding: 1.25rem;
+  border-radius: 18px;
+  background: rgba(207, 167, 90, .08);
+  border: 1px solid rgba(207, 167, 90, .22);
+}
+
+.memory-panel ul {
+  margin: .8rem 0 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: .5rem;
+}
+
+@media (max-width: 640px) {
+  .chapter-narrative,
+  .ending-epilogue { padding: .9rem; }
+  .event-narrative { font-size: .98rem; }
+}

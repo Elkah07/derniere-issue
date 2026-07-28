@@ -136,7 +136,7 @@ test('une ancienne sauvegarde du chapitre 1 reprend au chapitre 2', () => {
     history: [{ flag: 'nora_saved' }],
   };
   const migrated = upgradeSavedGame(legacy);
-  assert.equal(migrated.version, 3);
+  assert.equal(migrated.version, 4);
   assert.equal(migrated.eventIndex, 3);
   assert.equal(getCurrentEvent(migrated).chapter, 2);
   assert.equal(migrated.flags.noraAlive, true);

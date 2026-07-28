@@ -1,4 +1,4 @@
-# Dernière Issue · V0.3
+# Dernière Issue · V0.4 immersive
 
 Application d’aventures narratives de survie sociale pour **2 à 8 joueurs**.
 
@@ -9,6 +9,11 @@ Application d’aventures narratives de survie sociale pour **2 à 8 joueurs**.
 - Menu principal conçu comme une collection d’aventures
 - Fiche complète de **Le Crash**
 - 7 chapitres jouables du crash à l’évacuation
+- Introductions narratives développées et adaptées aux choix précédents
+- Scènes immersives en plusieurs paragraphes pour les 28 événements
+- Conséquences racontées avant l’affichage des effets techniques
+- Dialogues et rappels de Nora, de la mallette, des accusations et des sacrifices
+- Épilogues dynamiques selon les survivants, la route, la vérité et la cohésion
 - 21 événements principaux
 - 7 événements secondaires pour la partie longue
 - 3 durées : courte, normale et longue

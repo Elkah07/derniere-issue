@@ -1,4 +1,5 @@
 import { chapters, events, getEventById, setupOptions } from './gameData.js';
+import { getChapterNarrative, getEndingNarrative, getEventNarrative, getResultNarrative, getStoryEchoes } from './narrative.js';
 import {
   createInitialGame,
   getAvailableChoices,
@@ -56,6 +57,10 @@ function escapeHtml(value) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function renderParagraphs(paragraphs, className = 'narrative-copy') {
+  return `<div class="${className}">${paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}</div>`;
 }
 
 function setScreen(screen) {
@@ -393,7 +398,7 @@ function renderChapter() {
         <p class="kicker">LE CRASH · CHAPITRE ${number}/7</p>
         <div class="chapter-intro-icon">${chapter.icon}</div>
         <h1>${escapeHtml(chapter.title)}</h1>
-        <p>${escapeHtml(chapter.intro)}</p>
+        ${renderParagraphs(getChapterNarrative(ui.game, number), 'chapter-narrative')}
         ${number > 1 ? `<div class="chapter-state"><span>🥫 ${ui.game.gauges.reserves}/5</span><span>⛺ ${ui.game.gauges.shelter}/5</span><span>📡 ${ui.game.gauges.signal}/5</span><span>⚠️ ${ui.game.gauges.danger}/5</span></div>` : ''}
         <button class="button primary" data-action="enter-chapter">Commencer le chapitre ${number}</button>
       </section>
@@ -413,7 +418,7 @@ function renderGame() {
     <main class="shell game-shell">
       <header class="topbar compact"><button class="icon-button" data-action="home">⌂</button><div><p class="kicker">DERNIÈRE ISSUE · LE CRASH</p><h2>Chapitre ${event.chapter} · ${escapeHtml(chapter.title)}</h2></div><button class="icon-button danger-button" data-action="reset">↺</button></header>
       <section class="gauges">${gaugeCard('🥫', 'Réserves', ui.game.gauges.reserves)}${gaugeCard('⛺', 'Refuge', ui.game.gauges.shelter)}${gaugeCard('📡', 'Signal', ui.game.gauges.signal)}${gaugeCard('⚠️', 'Danger', ui.game.gauges.danger)}</section>
-      <section class="story-card"><div class="event-number">ÉTAPE ${ui.game.eventIndex + 1}/${ui.game.eventSequence.length}${event.secondary ? ' · IMPRÉVU' : ''}</div><p class="kicker">CHAPITRE ${event.chapter} · ${escapeHtml(chapter.title).toUpperCase()}</p><h2>${escapeHtml(event.title)}</h2><p>${escapeHtml(event.narrative)}</p>${hint}<button class="button primary" data-action="begin-event">Faire les choix</button></section>
+      <section class="story-card"><div class="event-number">ÉTAPE ${ui.game.eventIndex + 1}/${ui.game.eventSequence.length}${event.secondary ? ' · IMPRÉVU' : ''}</div><p class="kicker">CHAPITRE ${event.chapter} · ${escapeHtml(chapter.title).toUpperCase()}</p><h2>${escapeHtml(event.title)}</h2>${renderParagraphs(getEventNarrative(ui.game, event), 'event-narrative')}${hint}<button class="button primary" data-action="begin-event">Faire les choix</button></section>
       <section class="group-bag"><div><p class="step">RESSOURCES COMMUNES</p><div class="inventory common-inventory">${ui.game.groupInventory.length ? ui.game.groupInventory.map((item) => `<span>${escapeHtml(item)}</span>`).join('') : '<span>Aucun objet commun</span>'}</div></div><button class="button secondary small-button" data-action="abilities">Capacités</button></section>
       <section><div class="section-heading"><div><p class="step">SURVIVANTS</p><h3>État du groupe</h3></div><span class="cohesion-pill">🤝 Cohésion ${ui.game.gauges.cohesion}</span></div><div class="players-stack">${ui.game.players.map(playerCard).join('')}</div></section>
     </main>`;
@@ -453,8 +458,9 @@ function renderGroupChoice() {
 
 function renderResult() {
   const summary = ui.result.summary.map((line) => `<li>${escapeHtml(line)}</li>`).join('');
-  const nextText = ui.game.complete ? 'Découvrir votre issue' : ui.game.chapterTransition ? `Terminer le chapitre ${currentEvent()?.chapter ? currentEvent().chapter - 1 : 7}` : 'Continuer';
-  app.innerHTML = `<main class="shell result-shell"><section class="result-card"><div class="result-icon">✦</div><p class="kicker">CONSÉQUENCES</p><h2>${escapeHtml(ui.result.title)}</h2><ul>${summary}</ul>${ui.result.secret ? '<div class="secret-result"><strong>Une partie de cette conséquence reste secrète.</strong><p>La vérité pourra apparaître plus tard dans l’aventure ou dans le bilan final.</p></div>' : ''}<div class="mini-gauges"><span>🥫 ${ui.game.gauges.reserves}/5</span><span>⛺ ${ui.game.gauges.shelter}/5</span><span>📡 ${ui.game.gauges.signal}/5</span><span>⚠️ ${ui.game.gauges.danger}/5</span><span>🤝 ${ui.game.gauges.cohesion}</span></div><button class="button primary" data-action="continue">${escapeHtml(nextText)}</button></section></main>`;
+  const narrative = getResultNarrative(ui.game, ui.result);
+  const nextText = ui.game.complete ? 'Découvrir votre issue' : ui.game.chapterTransition ? `Terminer le chapitre ${ui.result.chapter ?? ''}` : 'Continuer';
+  app.innerHTML = `<main class="shell result-shell"><section class="result-card"><div class="result-icon">✦</div><p class="kicker">CONSÉQUENCES</p><h2>${escapeHtml(ui.result.title)}</h2>${renderParagraphs(narrative, 'result-narrative')}<div class="mechanical-impact"><strong>Ce que cela change</strong><ul>${summary}</ul></div>${ui.result.secret ? '<div class="secret-result"><strong>Une partie de cette conséquence reste secrète.</strong><p>La vérité pourra apparaître plus tard dans l’aventure ou dans le bilan final.</p></div>' : ''}<div class="mini-gauges"><span>🥫 ${ui.game.gauges.reserves}/5</span><span>⛺ ${ui.game.gauges.shelter}/5</span><span>📡 ${ui.game.gauges.signal}/5</span><span>⚠️ ${ui.game.gauges.danger}/5</span><span>🤝 ${ui.game.gauges.cohesion}</span></div><button class="button primary" data-action="continue">${escapeHtml(nextText)}</button></section></main>`;
 }
 
 function renderAbilities() {
@@ -470,11 +476,14 @@ function renderEnding() {
   const ending = ui.game.ending;
   const escaped = ending.escapedIds.map((id) => ui.game.players.find((player) => player.id === id)?.name).filter(Boolean);
   const stayed = ui.game.players.filter((player) => !ending.escapedIds.includes(player.id)).map((player) => player.name);
+  const epilogue = getEndingNarrative(ui.game);
+  const echoes = getStoryEchoes(ui.game);
   const roleReveal = ui.game.players.map((player) => `<article class="reveal-player"><div class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</div><div><strong>${escapeHtml(player.name)}</strong><span>${escapeHtml(player.role.title)} · ${escapeHtml(player.ability.title)}</span><small>${player.lives} vie${player.lives > 1 ? 's' : ''} restante${player.lives > 1 ? 's' : ''}</small></div></article>`).join('');
   app.innerHTML = `
     <main class="shell ending-shell">
-      <section class="ending-hero"><p class="kicker">VOTRE DERNIÈRE ISSUE</p><div class="ending-icon">${ending.icon}</div><h1>${escapeHtml(ending.title)}</h1><p>${escapeHtml(ending.text)}</p></section>
+      <section class="ending-hero"><p class="kicker">VOTRE DERNIÈRE ISSUE</p><div class="ending-icon">${ending.icon}</div><h1>${escapeHtml(ending.title)}</h1>${renderParagraphs(epilogue, 'ending-epilogue')}</section>
       <section class="ending-panel"><p class="step">BILAN DE L’ÉVACUATION</p><div class="ending-lists"><div><strong>Ont quitté l’île</strong><p>${escaped.length ? escapeHtml(escaped.join(', ')) : 'Personne'}</p></div><div><strong>Sont restés</strong><p>${stayed.length ? escapeHtml(stayed.join(', ')) : 'Personne'}</p></div></div><div class="final-gauges">${gaugeCard('🥫', 'Réserves', ui.game.gauges.reserves)}${gaugeCard('📡', 'Signal', ui.game.gauges.signal)}${gaugeCard('⚠️', 'Danger', ui.game.gauges.danger)}</div></section>
+      ${echoes.length ? `<section class="memory-panel"><p class="step">LES CHOIX QUI VOUS ONT SUIVIS</p><ul>${echoes.map((echo) => `<li>${escapeHtml(echo)}</li>`).join('')}</ul></section>` : ''}
       <section class="truth-panel"><p class="step">CE QUI S’EST RÉELLEMENT PASSÉ</p><h2>${escapeHtml(ui.game.plot.id === 'accident' ? 'Il n’y avait aucun traître.' : ui.game.plot.id === 'saboteur' ? 'Un saboteur se trouvait parmi vous.' : 'Une personne avait un objectif caché.')}</h2><p>${escapeHtml(ending.truth)}</p></section>
       <section><div class="section-heading"><div><p class="step">RÉVÉLATION</p><h3>Rôles et capacités</h3></div></div><div class="reveal-list">${roleReveal}</div></section>
       <section class="ending-actions"><button class="button primary" data-action="replay">Rejouer avec le même groupe</button><button class="button secondary" data-action="finish-home">Retour aux aventures</button></section>
