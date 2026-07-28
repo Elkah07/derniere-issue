@@ -46,6 +46,9 @@ let ui = {
   result: null,
   abilityResult: null,
   abilityTargets: {},
+  abilityViewerId: null,
+  abilityReady: false,
+  abilityPrivateResult: null,
   discussionPromises: [],
   promiseDraft: { playerId: null, promiseId: null, targetId: '' },
   timedOutIds: [],
@@ -112,8 +115,8 @@ function getSceneDescriptor(screen = ui.screen, game = ui.game, event = currentE
   let scene = 'menu';
   let cue = 'fade';
 
-  if (['home', 'adventure', 'setup', 'settings', 'rules', 'briefing'].includes(screen)) {
-    if (screen === 'briefing') {
+  if (['home', 'adventure', 'setup', 'settings', 'rules', 'briefing', 'abilitySelect', 'abilityPrivate'].includes(screen)) {
+    if (['briefing', 'abilitySelect', 'abilityPrivate'].includes(screen)) {
       scene = 'briefing';
       cue = 'reveal';
     } else if (screen === 'adventure' || screen === 'setup') {
@@ -476,13 +479,15 @@ function usePlayerAbility(playerId) {
     const targetId = ui.abilityTargets[playerId] ?? playerId;
     const { game, result } = useAbility(ui.game, playerId, targetId);
     ui.game = game;
-    ui.abilityResult = result;
+    ui.abilityPrivateResult = result;
     saveGame(ui.game);
+    audioDirector.play('secret', 0.45);
     render();
   } catch (error) {
     alert(error.message);
   }
 }
+
 
 function gaugeCard(icon, label, value, min = 0) {
   const normalized = clamp(value - min, 0, 5 - min);
@@ -558,7 +563,7 @@ function renderHome() {
         <button class="menu-tile" data-action="settings"><span class="tile-icon">⚙</span><span><strong>Réglages</strong><small>Confort et accessibilité</small></span></button>
         <div class="menu-tile status-tile"><span class="tile-icon">⌁</span><span><strong>Hors ligne</strong><small>Un seul téléphone suffit</small></span></div>
       </nav>
-      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.7</footer>
+      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.7.1</footer>
     </main>
   `;
 }
@@ -619,7 +624,7 @@ function renderRules() {
       <header class="topbar"><button class="icon-button" data-action="home">←</button><div><p class="kicker">DERNIÈRE ISSUE</p><h2>Comment jouer</h2></div></header>
       <section class="rules-hero panel"><span>2–8</span><div><strong>Un téléphone suffit</strong><p>Faites circuler l’appareil lors des choix et briefings secrets.</p></div></section>
       <section class="rules-list">
-        <article><b>01</b><div><h3>Recevez votre briefing</h3><p>Chaque joueur découvre une capacité et parfois un objectif personnel.</p></div></article>
+        <article><b>01</b><div><h3>Recevez votre briefing secret</h3><p>Chaque joueur découvre une capacité et parfois un objectif personnel. Rien n’est révélé aux autres avant la fin.</p></div></article>
         <article><b>02</b><div><h3>Parlez avant de choisir</h3><p>Le chrono lance une vraie discussion orale : négociez, promettez, accusez ou mentez.</p></div></article>
         <article><b>03</b><div><h3>Décidez sous pression</h3><p>Si personne ne valide à temps, l’histoire applique une conséquence adaptée à la scène.</p></div></article>
         <article><b>04</b><div><h3>Ouvrez votre propre chemin</h3><p>Le camp, l’expédition, le jugement et les systèmes choisis déclenchent des événements exclusifs.</p></div></article>
@@ -654,7 +659,7 @@ function renderBriefing() {
       <section class="briefing-card">
         <p class="kicker">BRIEFING DE ${escapeHtml(player.name).toUpperCase()}</p>
         <div class="briefing-symbol">${player.ability.icon}</div>
-        <h2>${escapeHtml(player.ability.title)}</h2><p>${escapeHtml(player.ability.description)}</p>
+        <h2>${escapeHtml(player.ability.title)}</h2><p>${escapeHtml(player.ability.description)}</p><div class="private-ability-note"><strong>Garde cette capacité secrète.</strong><span>Tu pourras la consulter et l’utiliser depuis « Dossier privé » entre les scènes.</span></div>
         <div class="role-card ${player.role.id === 'saboteur' ? 'danger-role' : ''}"><small>OBJECTIF PERSONNEL</small><strong>${escapeHtml(player.role.title)}</strong><p>${escapeHtml(player.role.briefing)}</p></div>
         <p class="privacy-hint">Ne montre pas cet écran aux autres joueurs.</p>
         <button class="button primary" data-action="next-briefing">${ui.briefingIndex === ui.game.players.length - 1 ? 'Commencer l’aventure' : 'Masquer et passer au suivant'}</button>
@@ -679,7 +684,8 @@ function renderChapter() {
 }
 
 function playerCard(player) {
-  return `<article class="player-card"><div class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</div><div class="player-main"><strong>${escapeHtml(player.name)}</strong><div class="lives">${'❤️'.repeat(player.lives)}${'🖤'.repeat(3 - player.lives)}</div><small>${player.statuses.length ? escapeHtml(player.statuses.join(' · ')) : 'En état de jouer'}</small></div><div class="inventory">${player.inventory.length ? player.inventory.map((item) => `<span>${escapeHtml(item)}</span>`).join('') : '<span>Inventaire vide</span>'}</div></article>`;
+  const publicStatuses = player.statuses.filter((status) => !['Protégé', 'Endurant', 'Chance'].includes(status));
+  return `<article class="player-card"><div class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</div><div class="player-main"><strong>${escapeHtml(player.name)}</strong><div class="lives">${'❤️'.repeat(player.lives)}${'🖤'.repeat(3 - player.lives)}</div><small>${publicStatuses.length ? escapeHtml(publicStatuses.join(' · ')) : 'En état de jouer'}</small></div><div class="inventory">${player.inventory.length ? player.inventory.map((item) => `<span>${escapeHtml(item)}</span>`).join('') : '<span>Inventaire vide</span>'}</div></article>`;
 }
 
 function renderGame() {
@@ -692,7 +698,7 @@ function renderGame() {
       <header class="topbar compact"><button class="icon-button" data-action="home">⌂</button><div><p class="kicker">DERNIÈRE ISSUE · LE CRASH</p><h2>Chapitre ${event.chapter} · ${escapeHtml(chapter.title)}</h2></div><button class="icon-button danger-button" data-action="reset">↺</button></header>
       <section class="gauges">${gaugeCard('🥫', 'Réserves', ui.game.gauges.reserves)}${gaugeCard('⛺', 'Refuge', ui.game.gauges.shelter)}${gaugeCard('📡', 'Signal', ui.game.gauges.signal)}${gaugeCard('⚠️', 'Danger', ui.game.gauges.danger)}</section>
       <section class="story-card"><div class="event-number">ÉTAPE ${ui.game.eventIndex + 1}/${ui.game.eventSequence.length}${event.secondary ? ' · IMPRÉVU' : ''}${event.branch ? ' · CHEMIN EXCLUSIF' : ''}</div><p class="kicker">CHAPITRE ${event.chapter} · ${escapeHtml(chapter.title).toUpperCase()}</p><h2>${escapeHtml(event.title)}</h2>${renderParagraphs(getEventNarrative(ui.game, event), 'event-narrative')}${hint}<div class="oral-cue"><span>🗣️</span><p><strong>Cette scène se joue à voix haute.</strong><br>${event.discussionSeconds ? `Vous aurez ${event.discussionSeconds} secondes pour discuter avant les choix.` : 'Lisez la scène, puis passez le téléphone pour les décisions privées.'}</p></div><button class="button primary" data-action="begin-event">${event.discussionSeconds ? 'Lancer la discussion' : 'Faire les choix'}</button></section>
-      <section class="group-bag"><div><p class="step">RESSOURCES COMMUNES</p><div class="inventory common-inventory">${ui.game.groupInventory.length ? ui.game.groupInventory.map((item) => `<span>${escapeHtml(item)}</span>`).join('') : '<span>Aucun objet commun</span>'}</div></div><button class="button secondary small-button" data-action="abilities">Capacités</button></section>
+      <section class="group-bag"><div><p class="step">RESSOURCES COMMUNES</p><div class="inventory common-inventory">${ui.game.groupInventory.length ? ui.game.groupInventory.map((item) => `<span>${escapeHtml(item)}</span>`).join('') : '<span>Aucun objet commun</span>'}</div></div><button class="button secondary small-button secret-dossier-button" data-action="ability-select">🔒 Dossier privé</button></section>
       <section><div class="section-heading"><div><p class="step">SURVIVANTS</p><h3>État du groupe</h3></div><span class="cohesion-pill">🤝 Cohésion ${ui.game.gauges.cohesion}</span></div><div class="players-stack">${ui.game.players.map(playerCard).join('')}</div></section>
     </main>`;
 }
@@ -763,14 +769,29 @@ function renderResult() {
   app.innerHTML = `<main class="shell result-shell"><section class="result-card"><div class="result-icon">✦</div><p class="kicker">CONSÉQUENCES</p><h2>${escapeHtml(ui.result.title)}</h2>${renderParagraphs(narrative, 'result-narrative')}<div class="mechanical-impact"><strong>Ce que cela change</strong><ul>${summary}</ul></div>${ui.result.timedOut ? '<div class="timeout-result"><strong>⏳ Le temps a expiré.</strong><p>L’inaction a déclenché une conséquence propre à cette scène.</p></div>' : ''}${ui.result.secret ? '<div class="secret-result"><strong>Une partie de cette conséquence reste secrète.</strong><p>La vérité pourra apparaître plus tard dans l’aventure ou dans le bilan final.</p></div>' : ''}<div class="mini-gauges"><span>🥫 ${ui.game.gauges.reserves}/5</span><span>⛺ ${ui.game.gauges.shelter}/5</span><span>📡 ${ui.game.gauges.signal}/5</span><span>⚠️ ${ui.game.gauges.danger}/5</span><span>🤝 ${ui.game.gauges.cohesion}</span></div><button class="button primary" data-action="continue">${escapeHtml(nextText)}</button></section></main>`;
 }
 
-function renderAbilities() {
-  const notice = ui.abilityResult ? `<div class="ability-notice"><strong>${escapeHtml(ui.abilityResult.title)}</strong>${ui.abilityResult.summary.map((line) => `<p>${escapeHtml(line)}</p>`).join('')}</div>` : '';
-  const cards = ui.game.players.map((player) => {
-    const targetSelect = player.ability.target && !player.ability.used ? `<select data-ability-target="${player.id}">${ui.game.players.map((target) => `<option value="${target.id}" ${(ui.abilityTargets[player.id] ?? player.id) === target.id ? 'selected' : ''}>${escapeHtml(target.name)}</option>`).join('')}</select>` : '';
-    return `<article class="ability-card ${player.ability.used ? 'used' : ''}"><div class="ability-icon">${player.ability.icon}</div><div><small>${escapeHtml(player.name)}</small><h3>${escapeHtml(player.ability.title)}</h3><p>${escapeHtml(player.ability.description)}</p>${targetSelect}</div><button class="button ${player.ability.used ? 'secondary' : 'primary'}" data-use-ability="${player.id}" ${player.ability.used ? 'disabled' : ''}>${player.ability.used ? 'Déjà utilisée' : 'Utiliser maintenant'}</button></article>`;
-  }).join('');
-  app.innerHTML = `<main class="shell abilities-shell"><header class="topbar"><button class="icon-button" data-action="back-game">←</button><div><p class="kicker">LE CRASH</p><h2>Capacités du groupe</h2></div></header>${notice}<p class="abilities-help">Chaque capacité ne peut être utilisée qu’une seule fois. Son utilisation est publique.</p><div class="abilities-list">${cards}</div></main>`;
+function renderAbilitySelect() {
+  const playerButtons = ui.game.players.map((player) => `<button class="target-card private-player-entry" data-ability-player="${player.id}"><span class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</span><strong>${escapeHtml(player.name)}</strong><span>›</span></button>`).join('');
+  app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">DOSSIER STRICTEMENT PRIVÉ</p><h2>Qui consulte son pouvoir ?</h2><p>Choisissez votre prénom, puis passez le téléphone. Aucun rôle ni pouvoir n’est visible sur cet écran.</p></header><div class="target-stack">${playerButtons}</div><button class="button secondary" data-action="back-game">Retour à l’aventure</button></main>`;
 }
+
+function renderAbilityPrivate() {
+  const player = ui.game.players.find((item) => item.id === ui.abilityViewerId) ?? ui.game.players[0];
+  if (!ui.abilityReady) {
+    app.innerHTML = `<main class="shell private-shell"><section class="privacy-card"><div class="privacy-icon">🔒</div><p class="kicker">DOSSIER SECRET</p><h2>Passe le téléphone à<br><span>${escapeHtml(player.name)}</span></h2><p>Les autres joueurs doivent détourner les yeux. La capacité et son utilisation restent privées.</p><button class="button primary" data-action="ability-ready">Je suis ${escapeHtml(player.name)}</button><button class="button secondary" data-action="ability-mask">Annuler</button></section></main>`;
+    return;
+  }
+
+  const targetSelect = player.ability.target && !player.ability.used
+    ? `<label class="field private-ability-target"><span>Cible du pouvoir</span><select data-ability-target="${player.id}">${ui.game.players.map((target) => `<option value="${target.id}" ${(ui.abilityTargets[player.id] ?? player.id) === target.id ? 'selected' : ''}>${escapeHtml(target.name)}</option>`).join('')}</select></label>`
+    : '';
+
+  const confirmation = ui.abilityPrivateResult
+    ? `<div class="private-power-confirmation"><strong>Pouvoir utilisé discrètement.</strong><p>${ui.abilityPrivateResult.summary.map((line) => escapeHtml(line)).join('<br>')}</p><small>Le jeu n’annoncera pas qui a utilisé la capacité. Certains effets pourront seulement être remarqués plus tard.</small></div>`
+    : '';
+
+  app.innerHTML = `<main class="shell private-shell"><section class="privacy-card private-power-card"><div class="privacy-icon">${player.ability.icon}</div><p class="kicker">CAPACITÉ DE ${escapeHtml(player.name).toUpperCase()}</p><h2>${escapeHtml(player.ability.title)}</h2><p>${escapeHtml(player.ability.description)}</p><div class="role-card ${player.role.id === 'saboteur' ? 'danger-role' : ''}"><small>OBJECTIF PERSONNEL</small><strong>${escapeHtml(player.role.title)}</strong><p>${escapeHtml(player.role.briefing)}</p></div>${targetSelect}${confirmation}${player.ability.used ? '<div class="ability-used-private">Cette capacité a déjà été utilisée.</div>' : `<button class="button primary" data-use-private-ability="${player.id}">Utiliser secrètement maintenant</button>`}<button class="button secondary" data-action="ability-mask">Masquer et revenir à l’aventure</button></section></main>`;
+}
+
 
 function renderEnding() {
   const ending = ui.game.ending;
@@ -820,10 +841,12 @@ function render() {
   if (ui.screen === 'privateChoice') renderPrivateChoice();
   if (ui.screen === 'groupChoice') renderGroupChoice();
   if (ui.screen === 'result') renderResult();
-  if (ui.screen === 'abilities') renderAbilities();
+  if (ui.screen === 'abilitySelect') renderAbilitySelect();
+  if (ui.screen === 'abilityPrivate') renderAbilityPrivate();
   if (ui.screen === 'ending') renderEnding();
   applyVisualTheme();
   audioDirector.sync({ screen: ui.screen, game: ui.game, event: currentEvent(), settings: ui.settings });
+  audioDirector.cueScene({ screen: ui.screen, game: ui.game, event: currentEvent(), result: ui.result });
   renderAudioControl();
 }
 
@@ -832,7 +855,8 @@ app.addEventListener('click', (event) => {
   if (!target) return;
   const action = target.dataset.action;
   audioDirector.unlock().then((ready) => {
-    if (ready && action !== 'audio-preview' && action !== 'toggle-sound') audioDirector.play('click', 0.55);
+    const quietActions = new Set(['home', 'open-crash', 'new-game', 'start-game', 'enter-chapter', 'begin-event', 'continue', 'resume', 'confirm-group', 'ability-select', 'ability-ready']);
+    if (ready && quietActions.has(action)) audioDirector.play('click', 0.28);
   });
   if (['new-game', 'open-crash', 'settings', 'rules', 'home', 'finish-home', 'replay', 'reset', 'delete-save'].includes(action)) clearCountdown();
 
@@ -903,9 +927,22 @@ app.addEventListener('click', (event) => {
     else if (ui.game.chapterTransition) setScreen('chapter');
     else setScreen('game');
   }
-  if (action === 'abilities') {
-    ui.abilityResult = null;
-    setScreen('abilities');
+  if (action === 'ability-select') {
+    ui.abilityViewerId = null;
+    ui.abilityReady = false;
+    ui.abilityPrivateResult = null;
+    setScreen('abilitySelect');
+  }
+  if (action === 'ability-ready') {
+    ui.abilityReady = true;
+    audioDirector.play('reveal', 0.35);
+    render();
+  }
+  if (action === 'ability-mask') {
+    ui.abilityReady = false;
+    ui.abilityPrivateResult = null;
+    ui.abilityViewerId = null;
+    setScreen('game');
   }
   if (action === 'back-game') setScreen('game');
   if (action === 'replay') replaySameGame();
@@ -943,7 +980,13 @@ app.addEventListener('click', (event) => {
     if (selected?.requiresActor && !ui.actorId) ui.actorId = ui.game.players[0]?.id;
     render();
   }
-  if (target.dataset.useAbility) usePlayerAbility(target.dataset.useAbility);
+  if (target.dataset.abilityPlayer) {
+    ui.abilityViewerId = target.dataset.abilityPlayer;
+    ui.abilityReady = false;
+    ui.abilityPrivateResult = null;
+    setScreen('abilityPrivate');
+  }
+  if (target.dataset.usePrivateAbility) usePlayerAbility(target.dataset.usePrivateAbility);
 });
 
 app.addEventListener('input', (event) => {

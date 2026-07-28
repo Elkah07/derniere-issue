@@ -16,6 +16,33 @@ const THEME_LABELS = {
   endingDark: 'L’île referme ses portes',
 };
 
+const EVENT_CUES = {
+  impact_escape: 'impact',
+  burning_crates: 'explosion',
+  save_nora: 'metal',
+  shelter_beach_tide: 'wave',
+  shelter_fuselage_aftershock: 'collapse',
+  shelter_jungle_source: 'jungleCue',
+  radio_voice: 'radioMessage',
+  ravine: 'stone',
+  outpost: 'powerUp',
+  sabotage_clues: 'radioCut',
+  storm: 'thunderShort',
+  generator: 'generator',
+  black_dossier: 'data',
+  trapped_person: 'explosion',
+  escape_route: 'alarm',
+  last_wave: 'waveImpact',
+  bonus_fire: 'fireBurst',
+  bonus_current: 'splash',
+  bonus_call: 'radioMessage',
+  bonus_silence: 'powerDown',
+};
+
+export function selectEventCue(eventId) {
+  return EVENT_CUES[eventId] ?? null;
+}
+
 function campTheme(game) {
   const path = game?.flags?.branchPath ?? [];
   if (path.includes('camp:beach')) return 'beach';
@@ -26,7 +53,7 @@ function campTheme(game) {
 
 export function selectAudioTheme({ screen, game, event } = {}) {
   if (['home', 'adventure', 'settings', 'rules', 'setup'].includes(screen)) return 'menu';
-  if (['briefing', 'privateChoice'].includes(screen)) return 'secrets';
+  if (['briefing', 'privateChoice', 'abilitySelect', 'abilityPrivate'].includes(screen)) return 'secrets';
   if (screen === 'ending') {
     const hopeful = new Set(['everyone_home', 'duo_together', 'those_who_stay']);
     return hopeful.has(game?.ending?.id) ? 'endingHope' : 'endingDark';
@@ -83,6 +110,8 @@ export class AudioDirector {
     this.timers = [];
     this.settings = { sound: true, ambience: true, sfx: true, volume: 65 };
     this.lastSync = null;
+    this.lastCueKey = null;
+    this.pendingCue = null;
     this.unlocked = false;
 
     if (typeof document !== 'undefined') {
@@ -101,8 +130,8 @@ export class AudioDirector {
     const volume = Math.max(0, Math.min(1, Number(this.settings.volume ?? 65) / 100));
     this.masterGain.gain.cancelScheduledValues(now);
     this.masterGain.gain.linearRampToValueAtTime(this.settings.sound ? volume : 0, now + 0.18);
-    this.ambienceGain.gain.linearRampToValueAtTime(this.settings.ambience === false ? 0 : 0.82, now + 0.18);
-    this.sfxGain.gain.linearRampToValueAtTime(this.settings.sfx === false ? 0 : 0.9, now + 0.18);
+    this.ambienceGain.gain.linearRampToValueAtTime(this.settings.ambience === false ? 0 : 0.28, now + 0.18);
+    this.sfxGain.gain.linearRampToValueAtTime(this.settings.sfx === false ? 0 : 0.68, now + 0.18);
     if (!this.settings.sound || this.settings.ambience === false) this.fadeTheme(0.2);
     else if (this.lastSync) this.sync(this.lastSync);
   }
@@ -115,6 +144,11 @@ export class AudioDirector {
     if (this.context.state === 'suspended') await this.context.resume().catch(() => {});
     this.unlocked = this.context.state === 'running';
     if (this.unlocked && this.pendingTheme) this.setTheme(this.pendingTheme);
+    if (this.unlocked && this.pendingCue) {
+      const cue = this.pendingCue;
+      this.pendingCue = null;
+      this.play(cue.name, cue.intensity ?? 0.7);
+    }
     return this.unlocked;
   }
 
@@ -124,8 +158,8 @@ export class AudioDirector {
     this.ambienceGain = context.createGain();
     this.sfxGain = context.createGain();
     this.masterGain.gain.value = Math.max(0, Math.min(1, Number(this.settings.volume ?? 65) / 100));
-    this.ambienceGain.gain.value = this.settings.ambience === false ? 0 : 0.82;
-    this.sfxGain.gain.value = this.settings.sfx === false ? 0 : 0.9;
+    this.ambienceGain.gain.value = this.settings.ambience === false ? 0 : 0.28;
+    this.sfxGain.gain.value = this.settings.sfx === false ? 0 : 0.68;
     this.ambienceGain.connect(this.masterGain);
     this.sfxGain.connect(this.masterGain);
     this.masterGain.connect(context.destination);
@@ -146,8 +180,8 @@ export class AudioDirector {
     const now = this.context.currentTime;
     const volume = Math.max(0, Math.min(1, Number(this.settings.volume ?? 65) / 100));
     this.masterGain.gain.setTargetAtTime(this.settings.sound ? volume : 0, now, 0.08);
-    this.ambienceGain.gain.setTargetAtTime(this.settings.ambience === false ? 0 : 0.82, now, 0.08);
-    this.sfxGain.gain.setTargetAtTime(this.settings.sfx === false ? 0 : 0.9, now, 0.08);
+    this.ambienceGain.gain.setTargetAtTime(this.settings.ambience === false ? 0 : 0.28, now, 0.08);
+    this.sfxGain.gain.setTargetAtTime(this.settings.sfx === false ? 0 : 0.68, now, 0.08);
   }
 
   getThemeLabel(theme = this.currentTheme ?? this.pendingTheme ?? 'silent') {
@@ -204,7 +238,7 @@ export class AudioDirector {
       }, (fadeSeconds * 1000) + 100);
     });
     this.nodes = [];
-    this.timers.forEach((timer) => globalThis.clearInterval?.(timer));
+    this.timers.forEach((timer) => { globalThis.clearInterval?.(timer); globalThis.clearTimeout?.(timer); });
     this.timers = [];
     this.themeBus = null;
     this.currentTheme = null;
@@ -277,11 +311,42 @@ export class AudioDirector {
     return oscillator;
   }
 
-  schedule(intervalMs, callback) {
-    callback();
-    const timer = globalThis.setInterval?.(callback, intervalMs);
-    if (timer) this.timers.push(timer);
+  schedule(minMs, callback, maxMs = minMs, immediate = false) {
+    const run = () => {
+      if (!this.themeBus || !this.context) return;
+      callback();
+      const delay = minMs + (Math.random() * Math.max(0, maxMs - minMs));
+      const timer = globalThis.setTimeout?.(run, delay);
+      if (timer) this.timers.push(timer);
+    };
+    if (immediate) run();
+    else {
+      const delay = minMs + (Math.random() * Math.max(0, maxMs - minMs));
+      const timer = globalThis.setTimeout?.(run, delay);
+      if (timer) this.timers.push(timer);
+    }
   }
+
+  cueScene({ screen, event, result } = {}) {
+    if (!event || !['game', 'result'].includes(screen)) return;
+    const phase = screen === 'result' ? 'result' : 'event';
+    const key = `${phase}:${event.id}:${result?.timedOut ? 'timeout' : result?.secret ? 'secret' : 'normal'}`;
+    if (this.lastCueKey === key) return;
+    this.lastCueKey = key;
+
+    let name = phase === 'event' ? selectEventCue(event.id) : null;
+    if (phase === 'result' && result?.timedOut) name = 'timeout';
+    if (phase === 'result' && result?.secret) name = 'secret';
+    if (!name) return;
+
+    const cue = { name, intensity: phase === 'event' ? 0.68 : 0.55 };
+    if (!this.context || !this.unlocked) {
+      this.pendingCue = cue;
+      return;
+    }
+    this.play(cue.name, cue.intensity);
+  }
+
 
   chirp({ min = 1600, max = 3400, duration = 0.07, gain = 0.018 } = {}) {
     if (!this.context || !this.themeBus || this.context.state !== 'running') return;
@@ -320,90 +385,73 @@ export class AudioDirector {
   }
 
   buildMenu() {
-    this.noise({ color: 'brown', gain: 0.035, lowpass: 520, highpass: 35, lfoRate: 0.07, lfoDepth: 0.012 });
-    this.tone({ frequency: 73.42, gain: 0.012, type: 'sine', lfoRate: 0.05, lfoDepth: 0.006 });
+    this.noise({ color: 'brown', gain: 0.012, lowpass: 440, highpass: 35, lfoRate: 0.04, lfoDepth: 0.004 });
   }
 
   buildSecrets() {
-    this.noise({ color: 'brown', gain: 0.018, lowpass: 380, highpass: 50, lfoRate: 0.12, lfoDepth: 0.008 });
-    this.tone({ frequency: 92.5, gain: 0.007, type: 'sine' });
+    this.noise({ color: 'brown', gain: 0.008, lowpass: 330, highpass: 55, lfoRate: 0.07, lfoDepth: 0.003 });
   }
 
   buildCrash() {
-    this.noise({ color: 'crackle', gain: 0.14, lowpass: 5200, highpass: 650 });
-    this.noise({ color: 'brown', gain: 0.055, lowpass: 210, highpass: 25, lfoRate: 0.16, lfoDepth: 0.02 });
-    this.tone({ frequency: 46, gain: 0.016, type: 'sine', lfoRate: 0.22, lfoDepth: 0.008 });
+    this.noise({ color: 'crackle', gain: 0.028, lowpass: 4200, highpass: 850 });
+    this.noise({ color: 'brown', gain: 0.014, lowpass: 180, highpass: 25, lfoRate: 0.07, lfoDepth: 0.004 });
   }
 
   buildCamp() {
-    this.noise({ color: 'brown', gain: 0.035, lowpass: 760, highpass: 50, lfoRate: 0.09, lfoDepth: 0.012 });
-    this.noise({ color: 'crackle', gain: 0.045, lowpass: 3800, highpass: 900 });
+    this.noise({ color: 'brown', gain: 0.012, lowpass: 650, highpass: 55, lfoRate: 0.05, lfoDepth: 0.004 });
   }
 
   buildBeach() {
-    this.noise({ color: 'white', gain: 0.075, lowpass: 980, highpass: 90, lfoRate: 0.105, lfoDepth: 0.055 });
-    this.noise({ color: 'brown', gain: 0.028, lowpass: 520, highpass: 30, lfoRate: 0.055, lfoDepth: 0.012 });
+    this.noise({ color: 'white', gain: 0.023, lowpass: 780, highpass: 100, lfoRate: 0.065, lfoDepth: 0.01 });
   }
 
   buildFuselage() {
-    this.noise({ color: 'crackle', gain: 0.095, lowpass: 4800, highpass: 620 });
-    this.noise({ color: 'brown', gain: 0.04, lowpass: 300, highpass: 25, lfoRate: 0.12, lfoDepth: 0.018 });
-    this.schedule(7200, () => this.play('metal', 0.5, true));
+    this.noise({ color: 'crackle', gain: 0.02, lowpass: 4100, highpass: 800 });
+    this.noise({ color: 'brown', gain: 0.012, lowpass: 260, highpass: 30, lfoRate: 0.05, lfoDepth: 0.004 });
+    this.schedule(24000, () => this.play('metal', 0.26, true), 42000);
   }
 
   buildJungle() {
-    this.noise({ color: 'brown', gain: 0.045, lowpass: 1600, highpass: 60, lfoRate: 0.08, lfoDepth: 0.018 });
-    this.noise({ color: 'white', gain: 0.014, lowpass: 6500, highpass: 2400 });
-    this.schedule(1700, () => {
-      if (Math.random() > 0.24) this.chirp({ min: 1700, max: 3900, gain: 0.013 + Math.random() * 0.01 });
-    });
+    this.noise({ color: 'brown', gain: 0.014, lowpass: 1250, highpass: 75, lfoRate: 0.045, lfoDepth: 0.004 });
+    this.schedule(16000, () => this.chirp({ min: 1500, max: 3100, gain: 0.006, duration: 0.055 }), 32000);
   }
 
   buildNight() {
-    this.noise({ color: 'brown', gain: 0.025, lowpass: 900, highpass: 45, lfoRate: 0.06, lfoDepth: 0.01 });
-    this.schedule(1250, () => {
-      if (Math.random() > 0.15) this.chirp({ min: 2600, max: 5300, duration: 0.045, gain: 0.012 });
-    });
-    this.noise({ color: 'white', gain: 0.008, lowpass: 5200, highpass: 1600, lfoRate: 0.18, lfoDepth: 0.004 });
+    this.noise({ color: 'brown', gain: 0.01, lowpass: 720, highpass: 50, lfoRate: 0.035, lfoDepth: 0.003 });
+    this.schedule(18000, () => this.chirp({ min: 2200, max: 4200, duration: 0.04, gain: 0.005 }), 36000);
   }
 
   buildExploration() {
-    this.noise({ color: 'brown', gain: 0.045, lowpass: 1450, highpass: 70, lfoRate: 0.1, lfoDepth: 0.018 });
-    this.schedule(2100, () => {
-      if (Math.random() > 0.35) this.chirp({ min: 1200, max: 3000, duration: 0.09, gain: 0.011 });
-    });
+    this.noise({ color: 'brown', gain: 0.013, lowpass: 1100, highpass: 80, lfoRate: 0.045, lfoDepth: 0.004 });
+    this.schedule(19000, () => this.chirp({ min: 1100, max: 2500, duration: 0.06, gain: 0.005 }), 39000);
   }
 
   buildDoubt() {
-    this.noise({ color: 'rain', gain: 0.082, lowpass: 7200, highpass: 350, lfoRate: 0.14, lfoDepth: 0.024 });
-    this.noise({ color: 'brown', gain: 0.05, lowpass: 620, highpass: 40, lfoRate: 0.075, lfoDepth: 0.022 });
-    this.tone({ frequency: 54, gain: 0.016, type: 'sine', lfoRate: 1.08, lfoDepth: 0.011 });
-    this.schedule(11500, () => { if (Math.random() > 0.25) this.thunder(0.065); });
+    this.noise({ color: 'rain', gain: 0.024, lowpass: 6200, highpass: 420, lfoRate: 0.06, lfoDepth: 0.006 });
+    this.noise({ color: 'brown', gain: 0.012, lowpass: 500, highpass: 45, lfoRate: 0.04, lfoDepth: 0.004 });
+    this.schedule(26000, () => this.thunder(0.025), 52000);
   }
 
   buildStation() {
-    this.tone({ frequency: 50, gain: 0.022, type: 'sine' });
-    this.tone({ frequency: 100, gain: 0.008, type: 'sine', detune: 5 });
-    this.noise({ color: 'white', gain: 0.018, lowpass: 5200, highpass: 1100, lfoRate: 0.23, lfoDepth: 0.01 });
-    this.schedule(5300, () => this.play('radio', 0.35, true));
+    this.tone({ frequency: 50, gain: 0.006, type: 'sine' });
+    this.noise({ color: 'white', gain: 0.007, lowpass: 4200, highpass: 1400, lfoRate: 0.08, lfoDepth: 0.002 });
+    this.schedule(28000, () => this.play('radio', 0.2, true), 48000);
   }
 
   buildEvacuation() {
-    this.noise({ color: 'rain', gain: 0.11, lowpass: 8200, highpass: 300, lfoRate: 0.18, lfoDepth: 0.035 });
-    this.noise({ color: 'brown', gain: 0.075, lowpass: 650, highpass: 25, lfoRate: 0.095, lfoDepth: 0.03 });
-    this.tone({ frequency: 83, gain: 0.013, type: 'square', lfoRate: 0.72, lfoDepth: 0.012 });
-    this.schedule(9000, () => { if (Math.random() > 0.2) this.thunder(0.1); });
+    this.noise({ color: 'rain', gain: 0.0162, lowpass: 7200, highpass: 360, lfoRate: 0.07, lfoDepth: 0.008 });
+    this.noise({ color: 'brown', gain: 0.016, lowpass: 540, highpass: 30, lfoRate: 0.05, lfoDepth: 0.006 });
+    this.schedule(22000, () => this.thunder(0.035), 46000);
   }
 
   buildEnding(hopeful) {
     if (hopeful) {
-      this.noise({ color: 'white', gain: 0.04, lowpass: 900, highpass: 70, lfoRate: 0.095, lfoDepth: 0.026 });
-      [146.83, 185, 220].forEach((frequency, index) => this.tone({ frequency, gain: 0.008 - (index * 0.001), type: 'sine' }));
+      this.noise({ color: 'white', gain: 0.012, lowpass: 780, highpass: 90, lfoRate: 0.05, lfoDepth: 0.005 });
     } else {
-      this.noise({ color: 'brown', gain: 0.04, lowpass: 420, highpass: 25, lfoRate: 0.055, lfoDepth: 0.016 });
-      [55, 65.41, 82.41].forEach((frequency, index) => this.tone({ frequency, gain: 0.009 - (index * 0.001), type: 'sine' }));
+      this.noise({ color: 'brown', gain: 0.012, lowpass: 360, highpass: 30, lfoRate: 0.04, lfoDepth: 0.004 });
     }
   }
+
 
   play(name, intensity = 1, throughTheme = false) {
     if (!this.context || !this.unlocked || !this.settings.sound || this.settings.sfx === false) return;
@@ -428,13 +476,35 @@ export class AudioDirector {
       oscillator.stop(start + duration + 0.03);
     };
 
-    if (name === 'click') beep({ from: 420, to: 540, duration: 0.045, gain: 0.018 });
+    const noiseBurst = ({ duration = 0.45, gain = 0.05, lowpass = 900, highpass = 25, color = 'brown', delay = 0 } = {}) => {
+      const start = now + delay;
+      const source = this.context.createBufferSource();
+      source.buffer = createNoiseBuffer(this.context, duration + 0.12, color);
+      const high = this.context.createBiquadFilter();
+      high.type = 'highpass';
+      high.frequency.value = highpass;
+      const low = this.context.createBiquadFilter();
+      low.type = 'lowpass';
+      low.frequency.value = lowpass;
+      const amp = this.context.createGain();
+      amp.gain.setValueAtTime(0.0001, start);
+      amp.gain.exponentialRampToValueAtTime(gain * gainScale, start + 0.015);
+      amp.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      source.connect(high);
+      high.connect(low);
+      low.connect(amp);
+      amp.connect(output);
+      source.start(start);
+      source.stop(start + duration + 0.08);
+    };
+
+    if (name === 'click') beep({ from: 420, to: 520, duration: 0.035, gain: 0.009 });
     if (name === 'select') {
-      beep({ from: 330, to: 440, duration: 0.07, gain: 0.035 });
-      beep({ from: 440, to: 660, duration: 0.09, gain: 0.026, delay: 0.055 });
+      beep({ from: 330, to: 440, duration: 0.07, gain: 0.02 });
+      beep({ from: 440, to: 660, duration: 0.09, gain: 0.014, delay: 0.055 });
     }
     if (name === 'reveal') {
-      beep({ from: 392, to: 523, duration: 0.18, gain: 0.038 });
+      beep({ from: 392, to: 523, duration: 0.18, gain: 0.022 });
       beep({ from: 523, to: 784, duration: 0.24, gain: 0.03, delay: 0.12 });
     }
     if (name === 'chapter') {
@@ -460,6 +530,49 @@ export class AudioDirector {
       beep({ from: 510, to: 85, duration: 0.42, gain: 0.025, type: 'square' });
       beep({ from: 290, to: 70, duration: 0.62, gain: 0.018, type: 'triangle', delay: 0.08 });
     }
+    if (name === 'impact') {
+      noiseBurst({ duration: 0.34, gain: 0.055, lowpass: 260, color: 'brown' });
+      beep({ from: 84, to: 42, duration: 0.38, gain: 0.026, type: 'sine' });
+    }
+    if (name === 'explosion') {
+      noiseBurst({ duration: 0.58, gain: 0.095, lowpass: 420, color: 'brown' });
+      noiseBurst({ duration: 0.24, gain: 0.038, lowpass: 4800, highpass: 700, color: 'white', delay: 0.018 });
+      beep({ from: 72, to: 34, duration: 0.62, gain: 0.038, type: 'sine' });
+    }
+    if (name === 'collapse' || name === 'stone') {
+      noiseBurst({ duration: 0.7, gain: 0.06, lowpass: 340, color: 'brown' });
+      beep({ from: 190, to: 48, duration: 0.56, gain: 0.025, type: 'triangle' });
+    }
+    if (name === 'wave' || name === 'splash' || name === 'waveImpact') {
+      noiseBurst({ duration: name === 'waveImpact' ? 1.0 : 0.62, gain: name === 'waveImpact' ? 0.07 : 0.045, lowpass: 1300, highpass: 90, color: 'white' });
+      if (name === 'waveImpact') beep({ from: 96, to: 46, duration: 0.65, gain: 0.026, type: 'sine' });
+    }
+    if (name === 'fireBurst') {
+      noiseBurst({ duration: 0.55, gain: 0.04, lowpass: 5400, highpass: 800, color: 'crackle' });
+    }
+    if (name === 'radioMessage' || name === 'radioCut') {
+      noiseBurst({ duration: 0.28, gain: 0.025, lowpass: 4200, highpass: 900, color: 'white' });
+      beep({ from: name === 'radioCut' ? 520 : 680, to: name === 'radioCut' ? 90 : 720, duration: 0.16, gain: 0.018, type: 'square', delay: 0.05 });
+    }
+    if (name === 'thunderShort') {
+      noiseBurst({ duration: 0.72, gain: 0.06, lowpass: 240, color: 'brown' });
+    }
+    if (name === 'alarm') {
+      beep({ from: 690, to: 690, duration: 0.16, gain: 0.022, type: 'square' });
+      beep({ from: 560, to: 560, duration: 0.16, gain: 0.018, type: 'square', delay: 0.22 });
+    }
+    if (name === 'generator' || name === 'powerUp' || name === 'powerDown') {
+      const up = name !== 'powerDown';
+      beep({ from: up ? 55 : 180, to: up ? 180 : 48, duration: 0.48, gain: 0.022, type: 'sine' });
+      if (up) beep({ from: 220, to: 440, duration: 0.18, gain: 0.012, delay: 0.35 });
+    }
+    if (name === 'data') {
+      [620, 760, 910].forEach((frequency, index) => beep({ from: frequency, to: frequency * 1.02, duration: 0.055, gain: 0.012, type: 'square', delay: index * 0.065 }));
+    }
+    if (name === 'jungleCue') {
+      this.chirp({ min: 900, max: 1800, duration: 0.08, gain: 0.007 });
+    }
+
     if (name === 'radio') {
       const source = this.context.createBufferSource();
       source.buffer = createNoiseBuffer(this.context, 0.38, 'white');

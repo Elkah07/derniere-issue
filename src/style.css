@@ -1618,3 +1618,38 @@ body.scene-evac .countdown {
   .scene-spotlight { width: 72%; }
   .scene-rain span { height: 22%; }
 }
+
+.private-ability-note {
+  display: grid;
+  gap: 4px;
+  margin: 18px 0;
+  padding: 14px 15px;
+  border: 1px solid rgba(199, 239, 90, .24);
+  border-radius: 15px;
+  background: rgba(199, 239, 90, .07);
+  text-align: left;
+}
+.private-ability-note strong { color: var(--lime); }
+.private-ability-note span { color: var(--muted); font-size: .76rem; line-height: 1.45; }
+.secret-dossier-button { border-color: rgba(199,239,90,.3); }
+.private-player-entry { animation: diRise .55s cubic-bezier(.18,.84,.32,1) both; }
+.private-power-card { max-width: 590px; margin-inline: auto; }
+.private-ability-target { margin: 18px 0; text-align: left; }
+.private-power-confirmation {
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid rgba(199,239,90,.28);
+  border-radius: 16px;
+  background: rgba(199,239,90,.08);
+  text-align: left;
+}
+.private-power-confirmation strong { color: var(--lime); }
+.private-power-confirmation p { margin: 7px 0; color: #eef7f1; line-height: 1.5; }
+.private-power-confirmation small { color: var(--muted); line-height: 1.45; }
+.ability-used-private {
+  margin: 18px 0;
+  padding: 13px 15px;
+  border-radius: 14px;
+  color: var(--muted);
+  background: rgba(255,255,255,.05);
+}

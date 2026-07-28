@@ -20,3 +20,11 @@ test('les fins heureuses et sombres ont des ambiances distinctes', () => {
   assert.equal(selectAudioTheme({ screen: 'ending', game: { ending: { id: 'duo_together' } } }), 'endingHope');
   assert.equal(selectAudioTheme({ screen: 'ending', game: { ending: { id: 'false_rescue' } } }), 'endingDark');
 });
+
+test('les scènes fortes déclenchent un effet ponctuel adapté', async () => {
+  const { selectEventCue } = await import('../src/audio.js');
+  assert.equal(selectEventCue('burning_crates'), 'explosion');
+  assert.equal(selectEventCue('trapped_person'), 'explosion');
+  assert.equal(selectEventCue('last_wave'), 'waveImpact');
+  assert.equal(selectEventCue('radio_voice'), 'radioMessage');
+});

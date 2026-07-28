@@ -1,10 +1,19 @@
-# Dernière Issue · V0.7 animations cinématiques
+# Dernière Issue · V0.7.1 audio contextuel et pouvoirs privés
 
 Application d’aventures narratives de survie sociale pour **2 à 8 joueurs**.
 
 **Première aventure complète : Le Crash.**
 
-## Nouveautés de la V0.7
+## Corrections de la V0.7.1
+- Fonds sonores fortement adoucis et moins répétitifs
+- Sons ambiants espacés de manière irrégulière au lieu de boucles fréquentes
+- Effets ponctuels liés aux scènes : explosion, détonation, vague, effondrement, radio, alarme, incendie et remise sous tension
+- Clics d’interface nettement réduits
+- Les capacités Éclaireur, Observateur, Médecin, etc. restent secrètes
+- Suppression de la liste publique des capacités du groupe
+- Nouveau bouton « Dossier privé » avec passage du téléphone
+- Utilisation d’un pouvoir sans annoncer publiquement son propriétaire
+- Les états secrets Protégé, Endurant et Chance ne sont plus affichés dans la fiche publique
 
 - Décors vivants selon le chapitre et le chemin suivi
 - Pluie, embruns, braises, feuillage, scanlines radio et grille de station animés
