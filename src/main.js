@@ -160,38 +160,118 @@ function renderHome() {
   app.innerHTML = `
     <main class="menu-shell">
       <header class="menu-brand">
-        <div class="brand-mark">✈</div>
-        <div><p class="kicker">AVENTURES NARRATIVES</p><strong>DERNIÈRE <span>ISSUE</span></strong></div>
+        <div class="brand-mark">⌁</div>
+        <div><p class="kicker">VOS CHOIX. VOTRE HISTOIRE.</p><strong>DERNIÈRE <span>ISSUE</span></strong></div>
         <button class="icon-button" data-action="settings" aria-label="Ouvrir les réglages">⚙</button>
       </header>
 
-      <section class="featured-adventure">
-        <div class="adventure-visual" aria-hidden="true">
-          <span class="visual-sun"></span><span class="visual-plane">✈</span>
-          <span class="visual-island"></span>
+      <section class="collection-intro">
+        <p class="kicker">COLLECTION D’AVENTURES</p>
+        <h1>Jusqu’où irez-vous<br><span>pour survivre ?</span></h1>
+        <p>Entrez dans des histoires où chaque décision transforme le groupe, révèle des secrets et ouvre une issue différente.</p>
+      </section>
+
+      ${hasSave ? `
+        <section class="continue-card">
+          <div class="continue-icon">▶</div>
+          <div class="continue-copy">
+            <small>PARTIE EN COURS · LE CRASH</small>
+            <strong>Reprendre votre aventure</strong>
+            <span>${progress} · Sauvegarde automatique</span>
+          </div>
+          <button class="button primary" data-action="resume">Reprendre</button>
+        </section>
+      ` : ''}
+
+      <section class="library-section">
+        <div class="library-heading">
+          <div><p class="kicker">CHOISIR UNE AVENTURE</p><h2>Les histoires</h2></div>
+          <span>1 disponible</span>
         </div>
-        <div class="adventure-content">
-          <div class="adventure-meta"><span>AVENTURE 01</span><span>2–8 JOUEURS</span></div>
-          <h1>LE<br><span>CRASH</span></h1>
-          <p>Votre avion s’écrase sur une île inconnue. Chaque décision peut sauver le groupe… ou le briser.</p>
-          ${hasSave ? `
-            <button class="button primary resume-button" data-action="resume">
-              <span><small>PARTIE EN COURS</small>Reprendre l’aventure</span><b>›</b>
-            </button>
-            <div class="save-progress"><span style="width:${ui.game.chapterComplete ? 100 : ((ui.game.eventIndex ?? 0) / 3) * 100}%"></span></div>
-            <p class="save-caption">${progress} · Sauvegarde automatique</p>
-          ` : '<button class="button primary" data-action="new-game">Commencer l’aventure</button>'}
+
+        <button class="adventure-card crash-card" data-action="open-crash">
+          <span class="card-art" aria-hidden="true">
+            <i class="visual-sun"></i><i class="visual-plane">✈</i><i class="visual-island"></i>
+          </span>
+          <span class="card-body">
+            <span class="adventure-meta"><i>AVENTURE 01</i><i>DISPONIBLE</i></span>
+            <strong>LE <em>CRASH</em></strong>
+            <span>Après l’impact, l’île ne sera pas votre seul danger.</span>
+            <span class="card-stats">2–8 joueurs <b>·</b> 7 chapitres <b>·</b> Survie sociale</span>
+            <span class="discover-link">Découvrir l’aventure <b>›</b></span>
+          </span>
+        </button>
+
+        <div class="future-grid">
+          <article class="adventure-card future-card">
+            <span class="future-number">02</span><span><small>PROCHAINE AVENTURE</small><strong>Dossier classé</strong><em>Bientôt disponible</em></span>
+          </article>
+          <article class="adventure-card future-card">
+            <span class="future-number">03</span><span><small>NOUVELLE ISSUE</small><strong>Signal perdu</strong><em>Bientôt disponible</em></span>
+          </article>
         </div>
       </section>
 
       <nav class="menu-grid" aria-label="Menu principal">
-        <button class="menu-tile" data-action="new-game"><span class="tile-icon">＋</span><span><strong>Nouvelle partie</strong><small>Créer un nouvel équipage</small></span></button>
         <button class="menu-tile" data-action="rules"><span class="tile-icon">?</span><span><strong>Comment jouer</strong><small>Principe et conseils</small></span></button>
         <button class="menu-tile" data-action="settings"><span class="tile-icon">⚙</span><span><strong>Réglages</strong><small>Confort et accessibilité</small></span></button>
         <div class="menu-tile status-tile"><span class="tile-icon">⌁</span><span><strong>Hors ligne</strong><small>Jouez sur un seul téléphone</small></span></div>
       </nav>
 
-      <footer class="menu-footer">VERSION 0.1 · LE CRASH</footer>
+      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.2</footer>
+    </main>
+  `;
+}
+
+function renderAdventure() {
+  const hasSave = Boolean(ui.game);
+  const progress = hasSave
+    ? `${ui.game.chapterComplete ? 3 : Math.min((ui.game.eventIndex ?? 0) + 1, 3)}/3 événements`
+    : '';
+
+  app.innerHTML = `
+    <main class="adventure-page">
+      <header class="adventure-topbar">
+        <button class="icon-button" data-action="home" aria-label="Retour aux aventures">←</button>
+        <div><p class="kicker">DERNIÈRE ISSUE</p><strong>FICHE AVENTURE</strong></div>
+        <button class="icon-button" data-action="settings" aria-label="Ouvrir les réglages">⚙</button>
+      </header>
+
+      <section class="adventure-hero">
+        <div class="adventure-visual" aria-hidden="true">
+          <span class="visual-sun"></span><span class="visual-plane">✈</span>
+          <span class="visual-island"></span>
+        </div>
+        <div class="adventure-content">
+          <div class="adventure-meta"><span>AVENTURE 01</span><span>SURVIE SOCIALE</span></div>
+          <h1>LE<br><span>CRASH</span></h1>
+          <p>Votre avion s’écrase sur une île inconnue. Les ressources manquent, les blessures s’accumulent et chacun cache peut-être quelque chose.</p>
+        </div>
+      </section>
+
+      <section class="adventure-details">
+        <div class="detail-stats">
+          <div><span>♟</span><strong>2–8</strong><small>joueurs</small></div>
+          <div><span>▤</span><strong>7</strong><small>chapitres</small></div>
+          <div><span>◷</span><strong>Variable</strong><small>selon vos réglages</small></div>
+        </div>
+
+        <div class="adventure-pitch">
+          <p class="kicker">VOTRE MISSION</p>
+          <h2>Survivre. Ensemble… peut-être.</h2>
+          <p>Explorez l’île, gérez vos vies et vos ressources, prenez des décisions publiques ou secrètes et découvrez qui vous pouvez réellement croire.</p>
+          <div class="choice-warning"><span>!</span><p><strong>Vos décisions façonneront l’histoire.</strong><br>Il n’existe pas une seule bonne issue.</p></div>
+        </div>
+
+        <div class="adventure-actions">
+          ${hasSave ? `
+            <button class="button primary resume-button" data-action="resume">
+              <span><small>PARTIE EN COURS · ${progress}</small>Reprendre Le Crash</span><b>›</b>
+            </button>
+            <button class="button secondary" data-action="new-game">Commencer une nouvelle partie</button>
+          ` : '<button class="button primary" data-action="new-game">Commencer Le Crash</button>'}
+        </div>
+      </section>
     </main>
   `;
 }
@@ -244,7 +324,7 @@ function renderRules() {
     <main class="shell rules-shell">
       <header class="topbar">
         <button class="icon-button" data-action="home" aria-label="Retour au menu">←</button>
-        <div><p class="kicker">LE CRASH</p><h2>Comment jouer</h2></div>
+        <div><p class="kicker">DERNIÈRE ISSUE</p><h2>Comment jouer</h2></div>
       </header>
       <section class="rules-hero panel">
         <span>2–8</span><div><strong>Un téléphone suffit</strong><p>Installez-vous ensemble et faites circuler l’appareil lors des choix secrets.</p></div>
@@ -255,7 +335,7 @@ function renderRules() {
         <article><b>03</b><div><h3>Survivez aux conséquences</h3><p>Vos vies, ressources, objets et relations évoluent selon vos décisions.</p></div></article>
       </section>
       <div class="tip-card"><span>!</span><p><strong>Conseil</strong> Ne lisez jamais l’écran d’un autre joueur pendant un choix secret.</p></div>
-      <button class="button primary" data-action="new-game">Préparer l’équipage</button>
+      <button class="button primary" data-action="home">Choisir une aventure</button>
     </main>
   `;
 }
@@ -508,6 +588,7 @@ function renderChapterComplete() {
 function render() {
   applySettings();
   if (ui.screen === 'home') renderHome();
+  if (ui.screen === 'adventure') renderAdventure();
   if (ui.screen === 'settings') renderSettings();
   if (ui.screen === 'rules') renderRules();
   if (ui.screen === 'setup') renderSetup();
@@ -524,6 +605,7 @@ app.addEventListener('click', (event) => {
   const action = target.dataset.action;
 
   if (action === 'new-game') setScreen('setup');
+  if (action === 'open-crash') setScreen('adventure');
   if (action === 'settings') setScreen('settings');
   if (action === 'rules') setScreen('rules');
   if (action === 'resume') setScreen(ui.game.chapterComplete ? 'game' : 'game');

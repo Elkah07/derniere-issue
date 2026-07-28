@@ -1,4 +1,4 @@
-# Dernière Issue · Prototype V0.1
+# Dernière Issue · V0.2
 
 Application d’aventures narratives de survie sociale pour 2 à 8 joueurs.
 
@@ -6,7 +6,11 @@ Application d’aventures narratives de survie sociale pour 2 à 8 joueurs.
 
 ## Contenu de cette version
 
-- Écran d’accueil Dernière Issue
+- Menu principal conçu comme une collection d’aventures
+- Fiche dédiée à Le Crash avant de lancer une partie
+- Reprise rapide d’une sauvegarde depuis la collection ou la fiche
+- Emplacements « Bientôt disponible » pour les futures aventures
+- Règles générales et réglages persistants
 - Création d’une partie de 2 à 8 joueurs
 - Réglages de durée et de public
 - 3 vies par joueur
