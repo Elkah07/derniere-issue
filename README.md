@@ -1,10 +1,10 @@
-# Dernière Issue · V0.5 sociale et à embranchements
+# Dernière Issue · V0.5.1 sociale et à embranchements
 
 Application d’aventures narratives de survie sociale pour **2 à 8 joueurs**.
 
 **Première aventure complète : Le Crash.**
 
-## Nouveautés de la V0.5
+## Nouveautés de la V0.5.1
 
 - Phases de **discussion orale** intégrées à 27 scènes
 - Chronos de discussion et de décision
@@ -20,6 +20,10 @@ Application d’aventures narratives de survie sociale pour **2 à 8 joueurs**.
 - Certaines branches retirent totalement des scènes communes devenues inutiles
 - Des actions permettent de voler un joueur précis, l’envoyer sur une fausse piste, contaminer sa gourde, fabriquer une preuve contre lui ou réserver une place à son détriment
 - Bilan final enrichi avec les promesses brisées, les trahisons, les décisions expirées et le chemin réellement suivi
+- Les **8 fins principales sont désormais vérifiées par 8 parcours complets reproductibles**
+- La fin duo exige maintenant une loyauté réelle entre les deux joueurs
+- Attendre une fréquence officielle peut réellement éviter le faux sauvetage
+- Une évacuation qui échoue ne déclenche plus artificiellement la fin volontaire « Ceux qui restent »
 
 ## Structure narrative
 
@@ -68,7 +72,7 @@ Une partie ne joue jamais les 40 événements. Elle construit sa propre séquenc
 - 8 issues principales
 - Épilogues dynamiques et révélation finale
 - Sauvegarde automatique dans le navigateur
-- Migration des sauvegardes V0.3 et V0.4 vers la V0.5
+- Migration des sauvegardes V0.3, V0.4 et V0.5 vers la V0.5.1
 
 L’arbre conceptuel initial reste disponible dans :
 
@@ -106,3 +110,11 @@ GitHub Pages étant configuré sur `main` et `/(root)`, la version sera republi�
 ## Firebase
 
 Firebase n’est pas nécessaire pour ce mode passe-et-joue sur un seul appareil. Il deviendra utile pour les salles en ligne, un téléphone par joueur, la synchronisation en direct et les comptes.
+
+## Audit des issues
+
+Le détail des conditions, des parcours validés et des corrections se trouve dans :
+
+```text
+AUDIT-FINS.md
+```

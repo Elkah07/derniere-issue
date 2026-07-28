@@ -572,8 +572,9 @@ function determineEnding(game) {
     (player.lives > 0 || !player.statuses.includes('Séparé du groupe'))
     && game.flags.leftBehind !== player.id
   );
-  let route = game.flags.route ?? 'stay';
-  let routeFailed = game.flags.routeFailed || game.flags.sabotageSuccess;
+  const requestedRoute = game.flags.route ?? 'stay';
+  let route = requestedRoute;
+  const routeFailed = game.flags.routeFailed || game.flags.sabotageSuccess;
 
   const backup = () => {
     if (route !== 'boat' && routeIsAvailable(game, 'boat')) return 'boat';
@@ -609,25 +610,36 @@ function determineEnding(game) {
   game.flags.route = route;
 
   const allActiveEscaped = active.length > 0 && escapedIds.length === active.length;
+  const duoIds = new Set(game.players.map((player) => player.id));
+  const duoBetrayal = game.betrayalLog.some((entry) =>
+    entry.actorId && entry.targetId && duoIds.has(entry.actorId) && duoIds.has(entry.targetId)
+  );
   const duoChoices = game.players.length === 2
+    && finalEntries.length === 2
     && finalEntries.every(([, value]) => ['wait', 'give'].includes(choiceId(value)))
     && escapedIds.length === 2
-    && !game.flags.noraAbandoned;
+    && !duoBetrayal;
 
   let endingId = 'no_return';
   if (duoChoices) endingId = 'duo_together';
-  else if (route === 'air' && ['cargo', 'saboteur'].includes(game.plot.id) && game.flags.evidenceState !== 'destroyed') endingId = 'false_rescue';
+  else if (
+    route === 'air'
+    && ['cargo', 'saboteur'].includes(game.plot.id)
+    && game.flags.evidenceState !== 'destroyed'
+    && !game.flags.waitedForOfficial
+  ) endingId = 'false_rescue';
   else if (escapedIds.length > 0 && ['hidden', 'destroyed'].includes(game.flags.evidenceState)) endingId = 'island_secret';
   else if (allActiveEscaped && !game.flags.leftBehind) endingId = 'everyone_home';
   else if (escapedIds.length === 1) endingId = 'last_survivor';
   else if (escapedIds.length > 1 && escapedIds.length < active.length) endingId = 'seat_price';
-  else if ((route === 'shelter' || route === 'stay') && game.gauges.shelter >= 2 && game.gauges.reserves >= 1) endingId = 'those_who_stay';
+  else if (requestedRoute === 'stay' && game.gauges.shelter >= 2 && game.gauges.reserves >= 1) endingId = 'those_who_stay';
 
   return {
     id: endingId,
     ...endings[endingId],
     escapedIds,
     route,
+    requestedRoute,
     truth: truthText(game),
   };
 }

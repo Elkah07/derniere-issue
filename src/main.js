@@ -414,7 +414,7 @@ function renderHome() {
         <button class="menu-tile" data-action="settings"><span class="tile-icon">⚙</span><span><strong>Réglages</strong><small>Confort et accessibilité</small></span></button>
         <div class="menu-tile status-tile"><span class="tile-icon">⌁</span><span><strong>Hors ligne</strong><small>Un seul téléphone suffit</small></span></div>
       </nav>
-      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.5.0</footer>
+      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.5.1</footer>
     </main>
   `;
 }
