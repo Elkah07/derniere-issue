@@ -77,3 +77,27 @@ test('45 simulations variées terminent sans blocage', () => {
   }
   assert.ok(endings.size >= 4, 'les simulations doivent atteindre plusieurs issues différentes');
 });
+
+test('les parties où tous les chronos expirent atteignent quand même une issue', () => {
+  for (const playerCount of [2, 4, 8]) {
+    for (const duration of ['short', 'normal', 'long']) {
+      let game = createInitialGame({
+        names: Array.from({ length: playerCount }, (_, index) => `T${index + 1}`),
+        duration,
+        random: seededRandom(playerCount * 100 + duration.length),
+      });
+      let guard = 0;
+      while (!game.complete && guard < 80) {
+        const event = getCurrentEvent(game);
+        assert.ok(event);
+        const extra = { timeout: true };
+        if (event.mode === 'privateEach') extra.timedOutIds = game.players.map((player) => player.id);
+        ({ game } = resolveEvent(game, event.id, {}, extra));
+        guard += 1;
+      }
+      assert.equal(game.complete, true);
+      assert.ok(game.flags.timedOutDecisions > 0);
+      assert.ok(game.ending?.id);
+    }
+  }
+});

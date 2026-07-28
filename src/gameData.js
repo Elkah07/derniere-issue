@@ -290,6 +290,129 @@ export const events = [
     ],
   },
 
+  // Événements exclusifs injectés par le moteur selon les décisions majeures.
+  {
+    id: 'shelter_beach_tide', chapter: 2, number: '4A', branch: true, mode: 'group', title: 'La marée monte',
+    narrative: "Le camp de plage offre une vue dégagée sur l’horizon, mais l’eau gagne déjà plusieurs mètres. Au large, une lueur apparaît entre deux vagues tandis qu’une caisse détachée de l’épave dérive vers les rochers.",
+    prompt: 'Vous ne pourrez sauver qu’une seule opportunité avant que la marée n’engloutisse le camp.',
+    choices: [
+      c('signal', 'Allumer un feu de signal', '🔥', 'Vous misez sur la lueur au large et rendez votre position visible.'),
+      c('crate', 'Récupérer la caisse', '📦', 'Deux personnes affrontent le courant pour sauver du matériel.'),
+      c('move', 'Déplacer le camp en hauteur', '🏃', 'Vous abandonnez la plage avant que la mer ne vous piège.'),
+    ],
+  },
+  {
+    id: 'shelter_fuselage_aftershock', chapter: 2, number: '4B', branch: true, mode: 'group', title: 'Le fuselage se referme',
+    narrative: "Un grondement traverse la carcasse. Une partie du plafond s’affaisse, le feu reprend sous les sièges et la porte du cockpit s’entrouvre pendant quelques secondes. Rester ici peut renforcer le camp ou livrer une vérité, mais l’épave devient un piège.",
+    prompt: 'Quelle urgence prend le dessus ?',
+    choices: [
+      c('extinguish', 'Étouffer l’incendie', '🧯', 'Vous sécurisez durablement le refuge.'),
+      c('cockpit', 'Forcer le cockpit', '🧭', 'Vous cherchez le journal de bord et la trajectoire du pilote.'),
+      c('cargo', 'Fouiller la soute', '🧰', 'Vous tentez de récupérer du matériel avant l’effondrement.'),
+    ],
+  },
+  {
+    id: 'shelter_jungle_source', chapter: 2, number: '4C', branch: true, mode: 'privateEach', title: 'La source cachée',
+    narrative: "À quelques mètres du camp, une source claire jaillit entre les racines. Elle suffirait à tout le groupe, mais chacun arrive par un sentier différent. Pendant quelques instants, personne ne sait exactement ce que les autres ont trouvé ni ce qu’ils versent dans leurs gourdes.",
+    prompt: 'Que fais-tu avant de retourner au camp ?',
+    choices: [
+      c('share', 'Révéler la source', '💧', 'Tu rapportes l’eau et indiques le chemin au groupe.'),
+      c('hide', 'Cacher une réserve personnelle', '🤫', 'Tu remplis une gourde et prétends n’avoir rien trouvé.'),
+      c('contaminate', 'Saboter la gourde de quelqu’un', '☠️', 'Tu verses un fruit irritant dans la gourde d’une personne.', { requiresTarget: true, targetLabel: 'Quelle personne vises-tu ?' }),
+    ],
+  },
+  {
+    id: 'jungle_ambush', chapter: 4, number: '10A', branch: true, mode: 'group', title: 'Le camp sans défense',
+    narrative: "Partis ensemble, vous entendez derrière vous le fracas de caisses renversées. Quelque chose fouille le camp. Devant, la tour métallique n’est plus qu’à quelques centaines de mètres. Faire demi-tour protège les réserves. Continuer peut ouvrir la seule route vers les secours.",
+    prompt: 'Le groupe doit choisir immédiatement.',
+    choices: [
+      c('return', 'Revenir défendre le camp', '↩️', 'Vous sauvez les réserves, mais perdez la piste de la tour.'),
+      c('continue', 'Continuer vers la tour', '🗼', 'Vous abandonnez une partie du camp pour atteindre l’installation.'),
+      c('decoy', 'Laisser un volontaire faire diversion', '🪤', 'Une personne retourne seule attirer la menace ailleurs.', { requiresActor: true, actorLabel: 'Qui fait diversion ?' }),
+    ],
+  },
+  {
+    id: 'split_cache', chapter: 4, number: '10B', branch: true, mode: 'privateEach', title: 'La cache entre les deux chemins',
+    narrative: "Les deux équipes découvrent presque au même moment une cache ancienne : nourriture, balises et un plan incomplet. Personne ne voit exactement ce que les autres emportent. Vous pouvez rapporter votre découverte, la garder ou utiliser la séparation pour affaiblir quelqu’un.",
+    prompt: 'Que fais-tu avant que les équipes se rejoignent ?',
+    choices: [
+      c('report', 'Tout rapporter au groupe', '📣', 'Tu partages ce que tu as trouvé.'),
+      c('hide', 'Cacher une ration', '🎒', 'Tu gardes une ressource pour toi.'),
+      c('steal', 'Voler un objet à quelqu’un', '🫳', 'Tu profites de la séparation pour fouiller un sac.', { requiresTarget: true, targetLabel: 'Qui veux-tu voler ?' }),
+      c('misdirect', 'Envoyer quelqu’un sur une fausse piste', '🪧', 'Tu donnes volontairement une mauvaise direction.', { requiresTarget: true, targetLabel: 'Qui veux-tu égarer ?' }),
+    ],
+  },
+  {
+    id: 'scout_route', chapter: 4, number: '10C', branch: true, mode: 'privateOne', actorRule: 'expeditionScout', title: 'Seul devant la porte',
+    narrative: "L’éclaireur atteint seul une porte de service. Un plan de maintenance indique un tunnel qui contourne la faille. Il peut ramener cette information, la cacher pour garder un avantage, ou condamner le tunnel afin que personne ne puisse suivre le même chemin.",
+    prompt: 'Que fais-tu de cette route secrète ?',
+    choices: [
+      c('reveal', 'Révéler le tunnel', '🗺️', 'Tout le groupe évitera la faille.'),
+      c('hide', 'Garder le passage secret', '🔒', 'Tu conserves une route personnelle vers la station.'),
+      c('collapse', 'Condamner le tunnel', '💥', 'Tu empêches les autres de l’utiliser et augmentes le danger.'),
+    ],
+  },
+  {
+    id: 'revenge_offer', chapter: 5, number: '14A', branch: true, mode: 'privateOne', actorRule: 'falseAccused', title: 'L’offre de revanche',
+    narrative: "Isolée à tort, la personne accusée découvre une caisse cachée sous le camp et une carte permettant d’éviter la tempête. Elle peut revenir aider le groupe, exiger réparation ou modifier discrètement la carte avant de la rendre.",
+    prompt: 'Que fais-tu de l’avantage que le groupe vient de te donner ?',
+    choices: [
+      c('forgive', 'Revenir aider le groupe', '🤝', 'Tu partages la carte malgré l’accusation.'),
+      c('demand', 'Exiger un objet en réparation', '⚖️', 'Tu ne donnes la carte qu’en échange de l’objet d’une personne.', { requiresTarget: true, targetLabel: 'À qui demandes-tu réparation ?' }),
+      c('mislead', 'Falsifier la carte', '🕳️', 'Tu envoies le groupe vers une route plus dangereuse.'),
+    ],
+  },
+  {
+    id: 'saboteur_cornered', chapter: 5, number: '14B', branch: true, mode: 'privateOne', actorRule: 'specialPlayer', title: 'Le saboteur acculé',
+    narrative: "Les preuves se resserrent autour de la bonne personne. Avant d’être fouillée, elle dispose de quelques secondes seule près de la radio. Elle peut avouer, tenter de désigner un autre responsable ou utiliser sa dernière liberté pour endommager le signal.",
+    prompt: 'Comment réagis-tu lorsque le groupe se rapproche de la vérité ?',
+    choices: [
+      c('confess', 'Avouer et coopérer', '👐', 'Tu révèles une partie du plan et bloques le prochain sabotage.'),
+      c('frame', 'Faire porter la faute à quelqu’un', '🎭', 'Tu places une preuve dans le sac d’une personne.', { requiresTarget: true, targetLabel: 'Qui veux-tu faire accuser ?' }),
+      c('damage', 'Endommager la radio', '✂️', 'Tu sacrifies une possibilité de sabotage pour réduire le signal.'),
+    ],
+  },
+  {
+    id: 'uneasy_truce', chapter: 5, number: '14C', branch: true, mode: 'group', title: 'La trêve fragile',
+    narrative: "Aucune majorité ne s’est formée. Le groupe peut enterrer les soupçons, placer toutes les preuves au centre du camp ou confier temporairement la décision à une seule personne. Chaque solution apaise une tension et en crée une autre.",
+    prompt: 'Comment continuez-vous malgré le doute ?',
+    choices: [
+      c('evidence', 'Mettre les preuves en commun', '📂', 'Les secrets utiles deviennent publics.'),
+      c('silence', 'Interdire les accusations', '🤐', 'La cohésion remonte, mais un responsable reste libre.'),
+      c('leader', 'Nommer un responsable', '🧭', 'Une personne contrôlera la prochaine décision.', { requiresActor: true, actorLabel: 'Qui reçoit cette autorité ?' }),
+    ],
+  },
+  {
+    id: 'beacon_reply', chapter: 6, number: '16A', branch: true, mode: 'group', title: 'Quelqu’un répond à la balise',
+    narrative: "La balise s’allume et un code d’identification apparaît. Une voix réclame immédiatement le module de la boîte noire avant d’envoyer des secours. Le groupe peut répondre franchement, masquer une partie du signal ou attendre une fréquence officielle.",
+    prompt: 'Que transmettez-vous ?',
+    choices: [
+      c('truth', 'Envoyer le véritable code', '📡', 'Vous maximisez les chances d’être localisés.'),
+      c('mask', 'Masquer votre identité', '🎛️', 'Vous protégez les preuves, mais affaiblissez le signal.'),
+      c('wait', 'Attendre une autre fréquence', '⏳', 'Vous évitez peut-être un faux sauvetage, au risque de perdre du temps.'),
+    ],
+  },
+  {
+    id: 'boat_capacity', chapter: 6, number: '16B', branch: true, mode: 'privateEach', title: 'Les places du hangar',
+    narrative: "L’embarcation s’ouvre sur une rangée de sièges étroits. Le panneau indique une capacité inférieure au nombre de survivants, mais certains compartiments peuvent être libérés. Chacun inspecte le bateau séparément et peut réserver une place, aider quelqu’un ou cacher la véritable capacité.",
+    prompt: 'Que fais-tu dans le hangar ?',
+    choices: [
+      c('free', 'Libérer les compartiments', '🔧', 'Tu travailles pour augmenter la capacité collective.'),
+      c('reserve', 'Réserver ta place', '🪑', 'Tu marques discrètement un siège pour toi.'),
+      c('give', 'Garantir une place à quelqu’un', '🎟️', 'Tu protèges une personne en priorité.', { requiresTarget: true, targetLabel: 'À qui garantis-tu une place ?' }),
+      c('sabotage', 'Réduire la capacité', '🕳️', 'Tu rends un siège inutilisable.', { saboteurOnly: true }),
+    ],
+  },
+  {
+    id: 'medical_protocol', chapter: 6, number: '16C', branch: true, mode: 'group', title: 'Le protocole médical',
+    narrative: "Le système médical ne peut pas tout faire. Il peut stabiliser la personne la plus faible, réveiller les réserves physiques de tout le groupe au prix de l’énergie restante, ou analyser les traces de contamination trouvées dans la jungle.",
+    prompt: 'Quel protocole lancez-vous ?',
+    choices: [
+      c('weakest', 'Sauver la personne la plus faible', '❤️', 'Une personne récupère complètement.'),
+      c('all', 'Stimuler tout le groupe', '⚡', 'Tout le monde gagne une protection, mais le danger augmente.'),
+      c('analysis', 'Analyser la contamination', '🧪', 'Les sabotages par poison sont révélés et soignés.'),
+    ],
+  },
   // Événements secondaires ajoutés uniquement en partie longue.
   {
     id: 'bonus_rain', chapter: 2, number: 'B1', secondary: true, mode: 'group', title: 'La pluie',
@@ -334,6 +457,67 @@ export const events = [
     choices: [c('food', 'Les provisions', '🥫', 'Évite une perte de réserves.'), c('radio', 'La radio', '📻', 'Évite une perte de signal.'), c('people', 'Les blessés', '🫂', 'Retire l’état Blessé à une personne.')],
   },
 ];
+
+
+const eventFlow = {
+  impact_escape: { discussionSeconds: 35, decisionSeconds: 20, timeoutChoice: 'inaction', timeoutSummary: "La fumée impose sa décision. Les personnes restées figées ressortent blessées." },
+  burning_crates: { discussionSeconds: 30, decisionSeconds: 18, timeoutChoice: 'inaction', timeoutSummary: "Les flammes gagnent une caisse pendant l’hésitation." },
+  save_nora: { discussionSeconds: 50, decisionSeconds: 20, timeoutChoice: 'abandon', timeoutEffects: { cohesion: -1 }, timeoutSummary: "La structure cède avant qu’un accord ne soit trouvé. Nora disparaît derrière les flammes." },
+  choose_shelter: { discussionSeconds: 60, decisionSeconds: 25, timeoutChoice: 'beach', timeoutEffects: { danger: 1, shelter: -1 }, timeoutSummary: "La nuit tombe pendant la dispute. Le groupe improvise un camp exposé sur la plage." },
+  shelter_beach_tide: { discussionSeconds: 40, decisionSeconds: 18, timeoutChoice: 'move', timeoutEffects: { reserves: -1 }, timeoutSummary: "La marée emporte une caisse avant que le camp ne soit déplacé." },
+  shelter_fuselage_aftershock: { discussionSeconds: 35, decisionSeconds: 18, timeoutChoice: 'extinguish', timeoutEffects: { danger: 1 }, timeoutSummary: "L’effondrement vous force à agir dans la panique." },
+  shelter_jungle_source: { discussionSeconds: 45, decisionSeconds: 20, timeoutChoice: 'inaction', timeoutEffects: { cohesion: -1 }, timeoutSummary: "Les retardataires reviennent sans eau et éveillent les soupçons.", promiseOptions: [
+    { id: 'share', label: 'Je révélerai la source au groupe', expectedChoiceIds: ['share'] },
+    { id: 'no_harm', label: 'Je ne toucherai à la gourde de personne', expectedChoiceIds: ['share', 'hide'] },
+  ] },
+  grey_case: { discussionSeconds: 0, decisionSeconds: 22, timeoutChoice: 'hide', timeoutSummary: "Le bruit approche. La mallette est cachée sans explication." },
+  rations: { discussionSeconds: 60, decisionSeconds: 18, timeoutChoice: 'inaction', timeoutEffects: { reserves: -1 }, timeoutSummary: "Une ration reste ouverte puis se renverse pendant que personne ne décide.", promiseOptions: [
+    { id: 'share', label: 'Je partagerai équitablement', expectedChoiceIds: ['share'] },
+    { id: 'no_steal', label: 'Je ne prendrai rien de plus', expectedChoiceIds: ['share', 'own'] },
+  ] },
+  missing_resource: { discussionSeconds: 65, decisionSeconds: 25, timeoutChoice: 'ignore', timeoutEffects: { cohesion: -1 }, timeoutSummary: "La discussion tourne court. La disparition reste impunie et la confiance baisse." },
+  radio_voice: { discussionSeconds: 30, decisionSeconds: 12, timeoutChoice: 'listen', timeoutEffects: { signal: -1 }, timeoutSummary: "La fréquence s’éteint avant qu’une réponse ne soit envoyée." },
+  expedition: { discussionSeconds: 70, decisionSeconds: 25, timeoutChoice: 'small', timeoutEffects: { danger: 1 }, timeoutSummary: "Faute d’accord, une personne part seule au dernier moment." },
+  jungle_ambush: { discussionSeconds: 25, decisionSeconds: 12, timeoutChoice: 'continue', timeoutEffects: { reserves: -2 }, timeoutSummary: "Le camp est fouillé pendant l’hésitation. Deux unités de réserves disparaissent." },
+  split_cache: { discussionSeconds: 50, decisionSeconds: 20, timeoutChoice: 'inaction', timeoutEffects: { danger: 1 }, timeoutSummary: "Les équipes tardent à se rejoindre et la nuit les rattrape.", promiseOptions: [
+    { id: 'report', label: 'Je rapporterai tout ce que je trouve', expectedChoiceIds: ['report'] },
+    { id: 'no_betrayal', label: 'Je ne volerai ni ne tromperai personne', expectedChoiceIds: ['report', 'hide'] },
+  ] },
+  scout_route: { discussionSeconds: 0, decisionSeconds: 20, timeoutChoice: 'hide', timeoutSummary: "L’éclaireur garde le tunnel pour lui faute d’avoir pris une décision claire." },
+  ravine: { discussionSeconds: 45, decisionSeconds: 18, timeoutChoice: 'turnback', timeoutEffects: { danger: 1 }, timeoutSummary: "Le soleil baisse. Le groupe doit faire demi-tour dans la précipitation." },
+  outpost: { discussionSeconds: 35, decisionSeconds: 18, timeoutChoice: 'inaction', timeoutSummary: "Le générateur s’éteint avant que les retardataires n’entrent dans une salle." },
+  clues: { discussionSeconds: 55, decisionSeconds: 20, timeoutChoice: 'inaction', timeoutEffects: { cohesion: -1 }, timeoutSummary: "Le silence devient lui-même suspect.", promiseOptions: [
+    { id: 'truth', label: 'Je raconterai exactement ce que j’ai vu', expectedChoiceIds: ['reveal'] },
+  ] },
+  judgment: { discussionSeconds: 90, decisionSeconds: 25, timeoutChoice: 'inaction', timeoutEffects: { cohesion: -1, signal: -1 }, timeoutSummary: "Le groupe ne tranche pas. Le câble reste coupé et les soupçons s’enveniment." },
+  revenge_offer: { discussionSeconds: 0, decisionSeconds: 22, timeoutChoice: 'mislead', timeoutSummary: "La colère décide à la place de la personne accusée : la carte est falsifiée." },
+  saboteur_cornered: { discussionSeconds: 0, decisionSeconds: 18, timeoutChoice: 'damage', timeoutSummary: "Acculé, le saboteur endommage la radio avant d’être maîtrisé." },
+  uneasy_truce: { discussionSeconds: 55, decisionSeconds: 20, timeoutChoice: 'silence', timeoutEffects: { danger: 1 }, timeoutSummary: "La trêve se résume à un silence tendu qui laisse le danger progresser." },
+  storm: { discussionSeconds: 55, decisionSeconds: 18, timeoutChoice: 'inaction', timeoutEffects: { danger: 1, shelter: -1 }, timeoutSummary: "La tempête frappe avant la fin des préparatifs.", promiseOptions: [
+    { id: 'protect', label: 'Je consacrerai mon choix au groupe', expectedChoiceIds: ['reinforce', 'radio', 'move'] },
+    { id: 'no_capsule', label: 'Je ne prendrai pas de capsule secrète', expectedChoiceIds: ['reinforce', 'radio', 'move'] },
+  ] },
+  generator: { discussionSeconds: 75, decisionSeconds: 22, timeoutChoice: 'medical', timeoutEffects: { signal: -1 }, timeoutSummary: "Le générateur perd de la puissance. Le système médical s’active par défaut." },
+  beacon_reply: { discussionSeconds: 40, decisionSeconds: 15, timeoutChoice: 'wait', timeoutEffects: { signal: -1 }, timeoutSummary: "La fréquence change avant votre réponse." },
+  boat_capacity: { discussionSeconds: 55, decisionSeconds: 18, timeoutChoice: 'inaction', timeoutEffects: { cohesion: -1 }, timeoutSummary: "Les sièges ne sont pas réorganisés à temps.", promiseOptions: [
+    { id: 'free', label: 'Je travaillerai à libérer des places', expectedChoiceIds: ['free'] },
+    { id: 'no_reserve', label: 'Je ne réserverai pas ma place en secret', expectedChoiceIds: ['free', 'give'] },
+  ] },
+  medical_protocol: { discussionSeconds: 35, decisionSeconds: 18, timeoutChoice: 'weakest', timeoutSummary: "Le système traite automatiquement la personne la plus faible." },
+  black_dossier: { discussionSeconds: 0, decisionSeconds: 25, timeoutChoice: 'hide', timeoutSummary: "Le terminal se verrouille. La personne devant l’écran conserve seule ce qu’elle a lu." },
+  trapped: { discussionSeconds: 35, decisionSeconds: 12, timeoutChoice: 'continue', timeoutEffects: { cohesion: -2 }, timeoutSummary: "La porte se ferme. La personne piégée reste derrière." },
+  escape_route: { discussionSeconds: 80, decisionSeconds: 25, timeoutChoice: 'stay', timeoutEffects: { danger: 1 }, timeoutSummary: "Aucune route n’est engagée avant l’effondrement. Le groupe doit rester sur l’île." },
+  final_choice: { discussionSeconds: 70, decisionSeconds: 15, timeoutChoice: 'inaction', timeoutSummary: "Les personnes qui hésitent ne sont pas prioritaires lors du départ.", promiseOptions: [
+    { id: 'wait', label: 'Je n’abandonnerai personne', expectedChoiceIds: ['wait', 'give'] },
+    { id: 'no_rush', label: 'Je ne me précipiterai pas pour embarquer', expectedChoiceIds: ['wait', 'give', 'proof'] },
+  ] },
+  last_wave: { discussionSeconds: 25, decisionSeconds: 10, timeoutChoice: 'together', timeoutEffects: { danger: 1 }, timeoutSummary: "La vague frappe avant votre décision. Le groupe encaisse le choc ensemble." },
+};
+
+for (const event of events) {
+  const flow = eventFlow[event.id];
+  if (flow) Object.assign(event, flow);
+}
 
 export const endings = {
   everyone_home: { title: 'Tout le monde rentre', icon: '🌅', text: "Tous les survivants quittent l’île ensemble. Les choix solidaires ont laissé une issue ouverte jusqu’au bout." },

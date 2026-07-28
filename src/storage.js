@@ -8,6 +8,7 @@ export const defaultSettings = {
   largeText: false,
   highContrast: false,
   confirmRestart: true,
+  timers: true,
 };
 
 export function saveGame(state) {

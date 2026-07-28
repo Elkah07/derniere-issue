@@ -85,6 +85,54 @@ const scenes = {
     "Une dernière vague frappe la côte et fait trembler les structures jusqu’à leurs fondations. Le passage se déforme. Les objets glissent. Derrière vous, l’île semble refermer toutes les routes à la fois.",
     "Le danger accumulé depuis le crash présente maintenant l’addition. Rester groupés, abandonner le matériel ou demander à quelqu’un de tenir le passage : il ne reste qu’un choix avant de découvrir qui s’en sort."
   ],
+  shelter_beach_tide: [
+    "La plage semblait être l’endroit le plus simple à défendre. À mesure que le soleil monte, la mer prouve le contraire. Les premières vagues lèchent déjà les couvertures et effacent les marques laissées autour des caisses.",
+    "Au large, une lumière apparaît une seconde entre deux murs d’écume. Plus près, une caisse détachée de l’épave roule dans le courant. Déplacer le camp, répondre au signal ou sauver le matériel : la marée ne vous laissera pas tenter les trois."
+  ],
+  shelter_fuselage_aftershock: [
+    "À l’intérieur du fuselage, la chaleur reste enfermée entre les parois. Un craquement sec traverse la cabine, puis plusieurs sièges basculent comme des dominos. Sous le plancher, le feu reprend autour d’une conduite éventrée.",
+    "La porte du cockpit vient pourtant de s’ouvrir sous le choc. Dans la soute, des caisses encore intactes deviennent visibles. L’épave offre soudain plusieurs réponses, mais elle menace de se refermer sur ceux qui resteront trop longtemps."
+  ],
+  shelter_jungle_source: [
+    "Le camp de jungle est à peine installé lorsqu’un bruit d’eau attire plusieurs personnes entre les racines. Une source claire coule dans une cuvette de pierre, suffisamment abondante pour changer les jours à venir.",
+    "Les joueurs arrivent séparément par de petits sentiers. Personne ne sait qui a découvert la source en premier, qui a déjà rempli une gourde ni ce qui a été touché avant le retour au camp. L’eau peut devenir une ressource commune, un secret ou une arme silencieuse."
+  ],
+  jungle_ambush: [
+    "Le groupe avance ensemble lorsque le fracas du camp retentit derrière les arbres. Des caisses tombent, une bâche se déchire et quelque chose pousse un cri bref près des réserves.",
+    "La tour se trouve droit devant, presque accessible. Revenir protéger le camp ferait perdre cette piste. Continuer offrirait peut-être une issue, mais laisserait tout ce que vous possédez à la merci de ce qui fouille la plage."
+  ],
+  split_cache: [
+    "Les deux équipes empruntent des chemins opposés et découvrent chacune une partie d’une ancienne cache de secours. Des rations, des balises et un plan incomplet sont répartis dans plusieurs coffres rongés par l’humidité.",
+    "Pendant quelques minutes, chacun est loin du regard du reste du groupe. Il est possible de tout rapporter, de cacher une ressource ou de profiter de la séparation pour voler, mentir et envoyer quelqu’un vers un chemin dangereux."
+  ],
+  scout_route: [
+    "L’éclaireur atteint seul une porte de maintenance presque invisible sous les lianes. Derrière, un tunnel descend vers la station et contourne entièrement la faille aperçue plus loin.",
+    "Le plan fixé au mur pourrait sauver tout le groupe. Garder le passage secret garantirait cependant une route personnelle. Le condamner empêcherait quiconque de vérifier ce qui a été découvert ici."
+  ],
+  revenge_offer: [
+    "L’isolement laisse à la personne accusée le temps de fouiller seule sous le camp. Elle découvre une carte plastifiée et une caisse que les autres n’avaient jamais remarquée.",
+    "Elle peut revenir avec une solution malgré l’injustice, exiger qu’une personne paie le prix de l’accusation, ou modifier la carte avant de la rendre. La vengeance n’a pas besoin d’être spectaculaire pour changer tout un itinéraire."
+  ],
+  saboteur_cornered: [
+    "Les accusations ont trouvé la bonne personne. Pendant que le groupe se rapproche, le saboteur reste quelques secondes seul près de la radio et des sacs personnels.",
+    "Avouer peut encore préserver une partie du groupe. Fabriquer une preuve peut déplacer le soupçon. Endommager le signal peut transformer une défaite personnelle en catastrophe collective."
+  ],
+  uneasy_truce: [
+    "Aucun verdict n’a tenu. Les indices restent au centre du cercle, entourés de personnes qui ne se regardent plus tout à fait de la même manière.",
+    "Le groupe peut mettre les preuves en commun, imposer le silence ou confier l’autorité à une seule personne. La discussion ne déterminera peut-être pas la vérité, mais elle décidera qui aura le droit d’agir au prochain danger."
+  ],
+  beacon_reply: [
+    "La balise s’allume dans un bourdonnement profond. Presque immédiatement, une voix demande votre code d’identification et exige que le module de la boîte noire soit préparé pour récupération.",
+    "Répondre franchement peut accélérer les secours. Masquer l’identité du groupe protège les preuves. Attendre une autre fréquence évite peut-être un piège, mais le signal commence déjà à faiblir."
+  ],
+  boat_capacity: [
+    "Le hangar s’ouvre sur une embarcation couverte de poussière. Le panneau de contrôle affiche moins de sièges que de survivants, mais plusieurs compartiments peuvent être démontés pour libérer de la place.",
+    "Chacun inspecte une partie différente du bateau. Une place peut être réservée, offerte ou créée. Elle peut aussi être rendue inutilisable sans que les autres comprennent immédiatement pourquoi."
+  ],
+  medical_protocol: [
+    "Le système médical déploie ses bras mécaniques et projette trois protocoles sur l’écran. Il peut sauver entièrement la personne la plus faible, protéger temporairement tout le groupe ou analyser les traces de contamination.",
+    "L’énergie ne suffira qu’à une procédure. Soigner les blessures visibles est rassurant. Chercher une trahison invisible peut changer la manière dont chacun boira la prochaine gourde."
+  ],
   bonus_rain: ["La pluie tropicale tombe sans prévenir, épaisse et tiède. Les récipients pourraient enfin se remplir, mais l’eau transforme déjà le sol du camp en boue et menace les attaches du refuge."],
   bonus_fever: ["Au milieu de la nuit, une personne se met à trembler malgré la chaleur. La fièvre grimpe vite. Utiliser les soins maintenant pourrait éviter le pire, mais personne ne sait ce que l’île réserve encore."],
   bonus_tracks: ["Des empreintes humaines apparaissent autour du camp. Elles ne viennent ni de la plage ni de votre sentier. Elles commencent près des réserves et disparaissent entre les arbres."],
@@ -458,5 +506,11 @@ export function getStoryEchoes(game) {
   if (game.flags.bagsSearched) echoes.push('Les sacs personnels ont été fouillés.');
   if (game.flags.leftBehind) echoes.push('Une personne a été laissée dans la station.');
   if (game.flags.sabotageSuccess) echoes.push('Le départ a été secrètement compromis.');
+  const broken = (game.flags.promises ?? []).filter((promise) => promise.resolved && !promise.honored);
+  if (broken.length) echoes.push(`${broken.length} promesse${broken.length > 1 ? 's ont' : ' a'} été brisée${broken.length > 1 ? 's' : ''} après une discussion publique.`);
+  const betrayals = game.betrayalLog ?? [];
+  if (betrayals.length) echoes.push(`${betrayals.length} trahison${betrayals.length > 1 ? 's ciblées ont' : ' ciblée a'} modifié les relations du groupe.`);
+  if ((game.flags.timedOutDecisions ?? 0) > 0) echoes.push(`${game.flags.timedOutDecisions} décision${game.flags.timedOutDecisions > 1 ? 's ont' : ' a'} été prise par l’urgence faute de réponse à temps.`);
+  if ((game.flags.branchPath ?? []).length) echoes.push(`Votre chemin : ${game.flags.branchPath.join(' → ')}.`);
   return echoes;
 }

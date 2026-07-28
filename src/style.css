@@ -808,3 +808,259 @@ button { font: inherit; }
   .ending-epilogue { padding: .9rem; }
   .event-narrative { font-size: .98rem; }
 }
+
+/* V0.5 · discussions, promesses et décisions sous pression */
+.oral-cue,
+.countdown,
+.discussion-card,
+.promise-panel,
+.timeout-result {
+  border: 1px solid rgba(170, 205, 190, 0.18);
+  background: rgba(255, 255, 255, 0.045);
+  border-radius: 18px;
+}
+
+.oral-cue {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  margin: 18px 0;
+}
+
+.oral-cue > span {
+  font-size: 1.55rem;
+}
+
+.oral-cue p,
+.discussion-card p,
+.promise-panel p,
+.timeout-result p {
+  margin: 0;
+  color: var(--muted, #aec2bb);
+  line-height: 1.55;
+}
+
+.countdown {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 16px;
+  margin: 0 0 18px;
+  position: sticky;
+  top: 10px;
+  z-index: 12;
+  backdrop-filter: blur(18px);
+}
+
+.countdown > span {
+  font-size: 1.5rem;
+}
+
+.countdown > b {
+  min-width: 2.5ch;
+  font-size: 1.75rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.countdown-copy {
+  min-width: 0;
+}
+
+.countdown-copy strong,
+.countdown-copy small {
+  display: block;
+}
+
+.countdown-copy small {
+  color: var(--muted, #aec2bb);
+  margin-top: 2px;
+}
+
+.countdown-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  margin-top: 9px;
+}
+
+.countdown-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #83d7bb, #e8b568);
+  transition: width 0.25s linear;
+}
+
+.countdown.disabled {
+  grid-template-columns: auto 1fr;
+  opacity: 0.82;
+}
+
+.countdown-critical .countdown {
+  border-color: rgba(255, 116, 93, 0.7);
+  box-shadow: 0 0 0 1px rgba(255, 116, 93, 0.12), 0 12px 45px rgba(107, 23, 14, 0.25);
+}
+
+.countdown-critical .countdown > b {
+  color: #ff856f;
+}
+
+.discussion-shell {
+  padding-bottom: 110px;
+}
+
+.discussion-card,
+.promise-panel {
+  padding: 20px;
+  margin-bottom: 18px;
+}
+
+.discussion-card {
+  text-align: center;
+}
+
+.discussion-icon {
+  font-size: 2.4rem;
+  margin-bottom: 6px;
+}
+
+.discussion-card h3,
+.promise-panel h3 {
+  margin: 4px 0 9px;
+}
+
+.discussion-rules {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.discussion-rules span {
+  border: 1px solid rgba(132, 217, 187, 0.2);
+  background: rgba(68, 157, 129, 0.09);
+  color: #c9e8dd;
+  border-radius: 99px;
+  padding: 7px 10px;
+  font-size: 0.78rem;
+}
+
+.promise-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.promise-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--muted, #aec2bb);
+}
+
+.promise-form label small {
+  opacity: 0.7;
+}
+
+.promise-form select {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #102925;
+  color: #f2f8f5;
+  padding: 0 10px;
+}
+
+.promise-form .button {
+  grid-column: 1 / -1;
+}
+
+.promise-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+}
+
+.promise-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: rgba(132, 217, 187, 0.07);
+  border: 1px solid rgba(132, 217, 187, 0.14);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.promise-list button {
+  appearance: none;
+  border: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.empty-promises {
+  margin-top: 14px !important;
+  font-style: italic;
+}
+
+.timeout-result {
+  padding: 14px 16px;
+  margin: 14px 0;
+  border-color: rgba(255, 176, 91, 0.35);
+  background: rgba(255, 151, 56, 0.08);
+}
+
+.timeout-result strong {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.event-number {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+@media (max-width: 680px) {
+  .promise-form {
+    grid-template-columns: 1fr;
+  }
+  .countdown {
+    top: 6px;
+  }
+}
+
+.betrayal-panel {
+  border: 1px solid rgba(225, 119, 94, 0.24);
+  background: rgba(117, 38, 28, 0.16);
+  border-radius: 20px;
+  padding: 20px;
+  margin: 18px 0;
+}
+
+.betrayal-panel h3 {
+  margin: 14px 0 8px;
+}
+
+.betrayal-panel ul {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+  color: #eadbd6;
+  line-height: 1.5;
+}

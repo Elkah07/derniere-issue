@@ -1,38 +1,76 @@
-# Dernière Issue · V0.4 immersive
+# Dernière Issue · V0.5 sociale et à embranchements
 
 Application d’aventures narratives de survie sociale pour **2 à 8 joueurs**.
 
 **Première aventure complète : Le Crash.**
 
-## Contenu de cette version
+## Nouveautés de la V0.5
 
-- Menu principal conçu comme une collection d’aventures
-- Fiche complète de **Le Crash**
+- Phases de **discussion orale** intégrées à 27 scènes
+- Chronos de discussion et de décision
+- Conséquences spécifiques lorsque le temps expire
+- Réglage permettant de désactiver les chronos pour l’accessibilité
+- Promesses publiques enregistrées avant certains choix secrets
+- Promesses tenues ou brisées avec impact sur la cohésion et la confiance
+- Relations de confiance suivies entre chaque paire de joueurs
+- Journal des trahisons ciblées
+- Les joueurs les plus trahis ou les moins fiables peuvent perdre la priorité lors d’une évacuation limitée
+- **12 scènes exclusives** injectées selon les choix importants
+- Le choix du camp, de l’expédition, du jugement et du générateur ouvre réellement des chemins différents
+- Certaines branches retirent totalement des scènes communes devenues inutiles
+- Des actions permettent de voler un joueur précis, l’envoyer sur une fausse piste, contaminer sa gourde, fabriquer une preuve contre lui ou réserver une place à son détriment
+- Bilan final enrichi avec les promesses brisées, les trahisons, les décisions expirées et le chemin réellement suivi
+
+## Structure narrative
+
+Le moteur contient maintenant **40 événements**, dont :
+
+- 21 événements principaux historiques
+- 7 imprévus de partie longue
+- 12 événements de branche exclusifs
+
+Une partie ne joue jamais les 40 événements. Elle construit sa propre séquence selon les décisions prises.
+
+### Grandes bifurcations
+
+1. **Lieu du camp**
+   - plage : marée, signal au large et caisse dérivante
+   - fuselage : incendie, cockpit et cargaison
+   - jungle : source secrète, réserves cachées et sabotage possible
+
+2. **Organisation de l’expédition**
+   - groupe réuni : camp attaqué puis faille
+   - groupe séparé : cache secrète, vols et fausses pistes
+   - éclaireur seul : tunnel révélé, caché ou détruit
+
+3. **Jugement**
+   - innocent accusé : occasion de pardon ou de vengeance
+   - saboteur identifié : aveu, fausse preuve ou sabotage d’urgence
+   - aucun verdict : trêve fragile et autorité temporaire
+
+4. **Systèmes de la station**
+   - balise : réponse ambiguë et choix de transmission
+   - hangar : capacité réelle, places réservées et sabotage possible
+   - médical : soin, protection ou révélation d’une contamination
+
+## Contenu général
+
 - 7 chapitres jouables du crash à l’évacuation
-- Introductions narratives développées et adaptées aux choix précédents
-- Scènes immersives en plusieurs paragraphes pour les 28 événements
-- Conséquences racontées avant l’affichage des effets techniques
-- Dialogues et rappels de Nora, de la mallette, des accusations et des sacrifices
-- Épilogues dynamiques selon les survivants, la route, la vérité et la cohésion
-- 21 événements principaux
-- 7 événements secondaires pour la partie longue
 - 3 durées : courte, normale et longue
-- Briefings secrets distribués en passe-et-joue
-- Intrigues secrètes : accident, cargaison, opportuniste ou saboteur
-- Aucun saboteur imposé dans les parties à 2 joueurs
+- Briefings secrets en passe-et-joue
+- Intrigues : accident, cargaison, opportuniste ou saboteur
+- Aucun saboteur imposé à deux joueurs
 - 8 capacités utilisables une fois par partie
-- Choix collectifs, choix secrets et choix ciblant un autre joueur
-- 3 vies par joueur, états, inventaires personnels et ressources communes
+- 3 vies par joueur, états et inventaires personnels
 - Jauges Réserves, Refuge, Signal, Danger et Cohésion
 - Nora, la mallette grise, la boîte noire et la station souterraine
-- Routes d’évacuation débloquées selon les décisions précédentes
+- Routes d’évacuation débloquées par les décisions précédentes
 - 8 issues principales
-- Révélation finale des rôles et de la vérité sur le crash
-- Sauvegarde et reprise automatiques dans le navigateur
-- Migration des anciennes sauvegardes arrêtées après le chapitre 1
-- 11 tests automatisés, dont 45 simulations complètes sans blocage
+- Épilogues dynamiques et révélation finale
+- Sauvegarde automatique dans le navigateur
+- Migration des sauvegardes V0.3 et V0.4 vers la V0.5
 
-L’arbre conceptuel des issues est disponible dans :
+L’arbre conceptuel initial reste disponible dans :
 
 ```text
 assets/arbre-des-issues-le-crash.png
@@ -58,21 +96,13 @@ npm test
 ## Mise à jour du dépôt GitHub
 
 1. Décompressez le ZIP livré.
-2. Dans le dépôt `derniere-issue`, cliquez sur **Add file > Upload files**.
-3. Importez le contenu du dossier à la racine du dépôt.
+2. Dans `derniere-issue`, cliquez sur **Add file > Upload files**.
+3. Importez tout le contenu du dossier à la racine.
 4. Acceptez le remplacement des fichiers existants.
 5. Validez avec **Commit changes**.
 
-GitHub Pages étant déjà configuré sur `main` et `/(root)`, la nouvelle version sera publiée automatiquement.
+GitHub Pages étant configuré sur `main` et `/(root)`, la version sera republiée automatiquement.
 
 ## Firebase
 
-Firebase n’est toujours pas nécessaire pour le mode actuel sur un seul appareil.
-
-Il deviendra utile pour :
-
-- créer des salles avec un code ;
-- utiliser un téléphone par joueur ;
-- synchroniser les choix en direct ;
-- permettre la reconnexion à une partie ;
-- ajouter des comptes et statistiques en ligne.
+Firebase n’est pas nécessaire pour ce mode passe-et-joue sur un seul appareil. Il deviendra utile pour les salles en ligne, un téléphone par joueur, la synchronisation en direct et les comptes.

@@ -102,7 +102,7 @@ function shuffled(array, random = Math.random) {
 }
 
 function buildEventSequence(duration) {
-  const core = events.filter((event) => !event.secondary);
+  const core = events.filter((event) => !event.secondary && !event.branch);
   if (duration === 'short') return core.filter((event) => event.essential).map((event) => event.id);
   if (duration !== 'long') return core.map((event) => event.id);
 
@@ -182,13 +182,15 @@ export function createInitialGame({ names, duration = 'normal', audience = 'all'
   const radioListener = pick(players, random)?.id ?? players[0].id;
 
   return {
-    version: 4,
+    version: 5,
     createdAt: new Date().toISOString(),
     settings: { duration, audience },
     players,
     plot,
     gauges: { reserves: 2, shelter: 0, signal: 0, danger: 1, cohesion: 0 },
     groupInventory: [],
+    relations: Object.fromEntries(players.map((player) => [player.id, Object.fromEntries(players.filter((other) => other.id !== player.id).map((other) => [other.id, 0]))])),
+    betrayalLog: [],
     flags: {
       noraAlive: false,
       noraAbandoned: false,
@@ -218,6 +220,13 @@ export function createInitialGame({ names, duration = 'normal', audience = 'all'
       routeFailed: false,
       escapedIds: [],
       finalChoices: {},
+      promises: [],
+      branchPath: [],
+      expeditionScout: null,
+      falseAccused: null,
+      framedPlayer: null,
+      boatSeatClaims: {},
+      timedOutDecisions: 0,
     },
     eventSequence: buildEventSequence(duration),
     eventIndex: 0,
@@ -231,10 +240,20 @@ export function createInitialGame({ names, duration = 'normal', audience = 'all'
 
 export function upgradeSavedGame(saved) {
   if (!saved) return null;
-  if (saved.version >= 4 && Array.isArray(saved.eventSequence)) return saved;
-  if (saved.version === 3 && Array.isArray(saved.eventSequence)) {
+  if (saved.version >= 5 && Array.isArray(saved.eventSequence)) return saved;
+  if (saved.version >= 3 && Array.isArray(saved.eventSequence)) {
     const upgraded = clone(saved);
-    upgraded.version = 4;
+    upgraded.version = 5;
+    upgraded.relations ??= Object.fromEntries(upgraded.players.map((player) => [player.id, Object.fromEntries(upgraded.players.filter((other) => other.id !== player.id).map((other) => [other.id, 0]))]));
+    upgraded.betrayalLog ??= [];
+    upgraded.flags ??= {};
+    upgraded.flags.promises ??= [];
+    upgraded.flags.branchPath ??= [];
+    upgraded.flags.expeditionScout ??= null;
+    upgraded.flags.falseAccused ??= null;
+    upgraded.flags.framedPlayer ??= null;
+    upgraded.flags.boatSeatClaims ??= {};
+    upgraded.flags.timedOutDecisions ??= 0;
     return upgraded;
   }
 
@@ -287,6 +306,9 @@ export function getEventActorId(game, event) {
     const index = (game.eventIndex + game.players.length) % game.players.length;
     return game.players[index]?.id ?? game.players[0].id;
   }
+  if (event.actorRule === 'expeditionScout') return game.flags.expeditionScout ?? game.players[0].id;
+  if (event.actorRule === 'falseAccused') return game.flags.falseAccused ?? game.players[0].id;
+  if (event.actorRule === 'specialPlayer') return game.plot.specialPlayerId ?? game.players[0].id;
   return game.players[0].id;
 }
 
@@ -397,6 +419,154 @@ function applySystem(game, id, result) {
   }
 }
 
+
+function relationValue(game, fromId, toId) {
+  return game.relations?.[fromId]?.[toId] ?? 0;
+}
+
+function changeTrust(game, observerId, subjectId, amount) {
+  if (!observerId || !subjectId || observerId === subjectId) return;
+  game.relations ??= {};
+  game.relations[observerId] ??= {};
+  game.relations[observerId][subjectId] = cap((game.relations[observerId][subjectId] ?? 0) + amount, -3, 3);
+}
+
+function recordSupport(game, actorId, targetId, label, eventId) {
+  if (targetId) changeTrust(game, targetId, actorId, 1);
+  game.history.push({ type: 'support', actorId, targetId, label, eventId, at: new Date().toISOString() });
+}
+
+function recordBetrayal(game, actorId, targetId, label, eventId, discovered = true) {
+  if (targetId) {
+    changeTrust(game, targetId, actorId, -2);
+    const target = game.players.find((player) => player.id === targetId);
+    if (discovered) addStatus(target, 'Méfiant');
+  }
+  game.betrayalLog ??= [];
+  game.betrayalLog.push({ actorId, targetId, label, eventId, discovered, at: new Date().toISOString() });
+  addGauge(game, 'cohesion', -1);
+}
+
+export function registerPromises(game, eventId, promises = []) {
+  const next = clone(game);
+  next.flags.promises ??= [];
+  const validPlayerIds = new Set(next.players.map((player) => player.id));
+  promises.forEach((promise) => {
+    if (!validPlayerIds.has(promise.playerId)) return;
+    if (promise.targetId && !validPlayerIds.has(promise.targetId)) return;
+    next.flags.promises.push({
+      id: `${eventId}-${promise.playerId}-${next.flags.promises.length + 1}`,
+      eventId,
+      playerId: promise.playerId,
+      targetId: promise.targetId ?? null,
+      promiseId: promise.promiseId,
+      label: promise.label,
+      expectedChoiceIds: [...(promise.expectedChoiceIds ?? [])],
+      resolved: false,
+    });
+  });
+  return next;
+}
+
+function applyPromiseOutcomes(game, event, choices, result) {
+  const promises = (game.flags.promises ?? []).filter((promise) => promise.eventId === event.id && !promise.resolved);
+  if (!promises.length) return;
+  let kept = 0;
+  let broken = 0;
+  promises.forEach((promise) => {
+    const actual = choiceId(choices[promise.playerId]);
+    const honored = promise.expectedChoiceIds.includes(actual);
+    promise.resolved = true;
+    promise.actualChoiceId = actual ?? 'inaction';
+    promise.honored = honored;
+    const actor = game.players.find((player) => player.id === promise.playerId);
+    const target = game.players.find((player) => player.id === promise.targetId);
+    if (honored) {
+      kept += 1;
+      if (target) recordSupport(game, actor?.id, target.id, promise.label, event.id);
+    } else {
+      broken += 1;
+      recordBetrayal(game, actor?.id, target?.id ?? null, `Promesse brisée : ${promise.label}`, event.id, true);
+    }
+  });
+  if (kept) {
+    addGauge(game, 'cohesion', 1);
+    result.summary.push(`${kept} promesse${kept > 1 ? 's ont' : ' a'} été tenue${kept > 1 ? 's' : ''}. Cohésion +1.`);
+  }
+  if (broken) result.summary.push(`${broken} promesse${broken > 1 ? 's ont' : ' a'} été brisée${broken > 1 ? 's' : ''}.`);
+}
+
+function insertAfterCurrent(game, eventIds) {
+  const unique = eventIds.filter((id) => id && !game.eventSequence.includes(id));
+  if (!unique.length) return;
+  game.eventSequence.splice(game.eventIndex + 1, 0, ...unique);
+}
+
+function removeFutureEvent(game, eventId) {
+  const index = game.eventSequence.indexOf(eventId, game.eventIndex + 1);
+  if (index >= 0) game.eventSequence.splice(index, 1);
+}
+
+function applyTimeoutEffects(game, event, result, timedOutIds = [], groupTimedOut = false) {
+  const anyTimeout = groupTimedOut || timedOutIds.length > 0;
+  if (!anyTimeout) return;
+  game.flags.timedOutDecisions = (game.flags.timedOutDecisions ?? 0) + (groupTimedOut ? 1 : timedOutIds.length);
+  const effects = event.timeoutEffects ?? {};
+  Object.entries(effects).forEach(([key, amount]) => addGauge(game, key, amount));
+  timedOutIds.forEach((id) => {
+    const player = game.players.find((item) => item.id === id);
+    addStatus(player, 'Hésitant');
+    if (event.id === 'impact_escape') addStatus(player, 'Blessé');
+    if (event.id === 'rations' && game.gauges.reserves <= 1) loseLife(player);
+  });
+  if (event.timeoutSummary) result.summary.push(event.timeoutSummary);
+}
+
+function applyBranching(game, eventId, choices, extra, result) {
+  game.flags.branchPath ??= [];
+  if (eventId === 'choose_shelter') {
+    const choice = choiceId(choices.group);
+    removeFutureEvent(game, 'camp_tasks');
+    const branch = ({ beach: 'shelter_beach_tide', fuselage: 'shelter_fuselage_aftershock', jungle: 'shelter_jungle_source' })[choice];
+    insertAfterCurrent(game, [branch]);
+    game.flags.branchPath.push(`camp:${choice}`);
+    result.summary.push('Ce choix ouvre un événement exclusif au prochain écran.');
+  }
+
+  if (eventId === 'expedition') {
+    const choice = choiceId(choices.group);
+    removeFutureEvent(game, 'ravine');
+    if (choice === 'together') insertAfterCurrent(game, ['jungle_ambush', 'ravine']);
+    if (choice === 'split') insertAfterCurrent(game, ['split_cache']);
+    if (choice === 'small') insertAfterCurrent(game, ['scout_route', 'ravine']);
+    game.flags.branchPath.push(`expedition:${choice}`);
+  }
+
+  if (eventId === 'scout_route') {
+    const actorId = getEventActorId(game, getEventById(eventId));
+    const decision = choiceId(choices[actorId] ?? Object.values(choices)[0]);
+    if (decision === 'reveal') removeFutureEvent(game, 'ravine');
+  }
+
+  if (eventId === 'judgment') {
+    if (game.flags.falseAccused) insertAfterCurrent(game, ['revenge_offer']);
+    else if (game.flags.sabotageBlocked && game.plot.id === 'saboteur') insertAfterCurrent(game, ['saboteur_cornered']);
+    else insertAfterCurrent(game, ['uneasy_truce']);
+    game.flags.branchPath.push(`judgment:${game.flags.falseAccused ? 'false' : game.flags.sabotageBlocked ? 'correct' : 'unresolved'}`);
+  }
+
+  if (eventId === 'generator') {
+    if (!game.flags.hasBlackBox) removeFutureEvent(game, 'black_dossier');
+    const decision = choiceId(choices.group) ?? '';
+    const branchEvents = [];
+    if (decision.includes('beacon')) branchEvents.push('beacon_reply');
+    if (decision.includes('boat')) branchEvents.push('boat_capacity');
+    if (decision.includes('medical')) branchEvents.push('medical_protocol');
+    insertAfterCurrent(game, branchEvents);
+    game.flags.branchPath.push(`systems:${decision}`);
+  }
+}
+
 function determineEnding(game) {
   const active = game.players.filter((player) =>
     (player.lives > 0 || !player.statuses.includes('Séparé du groupe'))
@@ -423,10 +593,13 @@ function determineEnding(game) {
     .map(([, value]) => targetId(value))
     .filter(Boolean);
 
-  const priority = [...new Set([...immediate, ...gifts, ...proof, ...waiters, ...active.map((player) => player.id)])];
+  const boatClaims = Object.values(game.flags.boatSeatClaims ?? {}).filter(Boolean);
+  const trustScore = (playerId) => game.players.reduce((total, observer) => total + relationValue(game, observer.id, playerId), 0);
+  const trustedOrder = [...active].sort((a, b) => trustScore(b.id) - trustScore(a.id)).map((player) => player.id);
+  const priority = [...new Set([...immediate, ...boatClaims, ...gifts, ...proof, ...waiters, ...trustedOrder])];
   let capacity = 0;
   if (route === 'air') capacity = active.length;
-  if (route === 'boat') capacity = Math.max(1, active.length - game.flags.capsuleCount);
+  if (route === 'boat') capacity = Math.max(1, active.length - game.flags.capsuleCount + (game.flags.boatCapacityBonus ?? 0));
   if (route === 'raft') capacity = 2;
   capacity = Math.max(0, capacity - (game.flags.capacityPenalty ?? 0));
   if (route === 'shelter' || route === 'stay') capacity = 0;
@@ -459,11 +632,30 @@ function determineEnding(game) {
   };
 }
 
-export function resolveEvent(game, eventId, choices, extra = {}) {
+export function resolveEvent(game, eventId, choices = {}, extra = {}) {
   const next = clone(game);
   const event = getEventById(eventId);
   if (!event) throw new Error(`Événement inconnu : ${eventId}`);
-  const result = { eventId, chapter: event.chapter, title: event.title, summary: [], secret: false };
+  choices = clone(choices ?? {});
+  const timedOutIds = [...(extra.timedOutIds ?? [])];
+  const groupTimedOut = Boolean(extra.timeout && event.mode === 'group');
+  if (groupTimedOut && !choiceId(choices.group)) choices.group = event.timeoutChoice ?? event.choices[0]?.id;
+  if (extra.timeout && event.mode === 'privateOne') {
+    const playerId = getEventActorId(next, event);
+    if (!choiceId(choices[playerId])) {
+      choices[playerId] = event.timeoutChoice ?? 'inaction';
+      timedOutIds.push(playerId);
+    }
+  }
+  if (event.mode === 'privateEach') {
+    next.players.forEach((player) => {
+      if (!choiceId(choices[player.id])) {
+        choices[player.id] = extra.timeout ? (event.timeoutChoice ?? 'inaction') : 'inaction';
+        if (extra.timeout && !timedOutIds.includes(player.id)) timedOutIds.push(player.id);
+      }
+    });
+  }
+  const result = { eventId, chapter: event.chapter, title: event.title, summary: [], secret: false, timedOut: groupTimedOut || timedOutIds.length > 0 };
   const ids = Object.values(choices).map(choiceId);
   const actor = next.players.find((player) => player.id === (extra.actorId ?? extra.volunteerId));
 
@@ -554,6 +746,72 @@ export function resolveEvent(game, eventId, choices, extra = {}) {
         addGauge(next, 'reserves', 1);
         addGauge(next, 'danger', 1);
         result.summary.push('La jungle fournit des ressources, mais rapproche le danger.');
+      }
+      break;
+    }
+
+    case 'shelter_beach_tide': {
+      const decision = choiceId(choices.group);
+      if (decision === 'signal') {
+        addGauge(next, 'signal', 2);
+        addGauge(next, 'danger', 1);
+        next.flags.beachSignalBonus = true;
+        result.summary.push('Le feu est visible au large : Signal +2, Danger +1.');
+      } else if (decision === 'crate') {
+        addGauge(next, 'reserves', 2);
+        addGroupItem(next, 'Gilet de sauvetage');
+        result.summary.push('La caisse contient des vivres et un gilet : Réserves +2.');
+      } else {
+        addGauge(next, 'shelter', 1);
+        next.flags.shelterLocation = 'cliff';
+        result.summary.push('Le camp est déplacé au-dessus de la marée : Refuge +1.');
+      }
+      break;
+    }
+
+    case 'shelter_fuselage_aftershock': {
+      const decision = choiceId(choices.group);
+      if (decision === 'extinguish') {
+        addGauge(next, 'shelter', 2);
+        next.flags.fuselageRisk = false;
+        result.summary.push('Le feu est maîtrisé et la carcasse devient un véritable refuge : Refuge +2.');
+      } else if (decision === 'cockpit') {
+        next.flags.codeKnown = next.flags.noraAlive;
+        next.flags.hasMap = true;
+        addGroupItem(next, 'Journal de bord');
+        result.summary.push('Le cockpit révèle une route volontaire vers l’île et une fréquence de secours.');
+      } else {
+        addGroupItem(next, 'Bidon de carburant');
+        addGroupItem(next, 'Équipement');
+        addGauge(next, 'danger', 1);
+        result.summary.push('Du carburant et des outils sont récupérés avant l’effondrement : Danger +1.');
+      }
+      break;
+    }
+
+    case 'shelter_jungle_source': {
+      const shares = ids.filter((id) => id === 'share').length;
+      const hiders = Object.entries(choices).filter(([, value]) => choiceId(value) === 'hide').map(([id]) => id);
+      const attacks = Object.entries(choices).filter(([, value]) => choiceId(value) === 'contaminate');
+      if (shares) {
+        addGauge(next, 'reserves', shares >= Math.ceil(next.players.length / 2) ? 2 : 1);
+        result.summary.push(`La source devient accessible au groupe : Réserves +${shares >= Math.ceil(next.players.length / 2) ? 2 : 1}.`);
+      }
+      hiders.forEach((id) => {
+        const player = next.players.find((item) => item.id === id);
+        addPersonalItem(player, 'Gourde cachée');
+        player.secrets.push('Tu as caché une réserve d’eau personnelle.');
+      });
+      if (hiders.length) result.summary.push(`${hiders.length} personne${hiders.length > 1 ? 's cachent' : ' cache'} une gourde.`);
+      attacks.forEach(([actorId, value]) => {
+        const victimId = targetId(value);
+        const victim = next.players.find((player) => player.id === victimId);
+        addStatus(victim, 'Contaminé');
+        recordBetrayal(next, actorId, victimId, 'Gourde contaminée', eventId, false);
+      });
+      if (attacks.length) {
+        result.secret = true;
+        result.summary.push('Au moins une gourde a été sabotée sans que la victime ne le sache.');
       }
       break;
     }
@@ -693,9 +951,91 @@ export function resolveEvent(game, eventId, choices, extra = {}) {
       } else {
         const explorer = actor ?? next.players[0];
         addStatus(explorer, 'Éclaireur isolé');
+        next.flags.expeditionScout = explorer.id;
         explorer.secrets.push('Tu as aperçu une seconde entrée vers la station.');
         addGauge(next, 'danger', 1);
         result.summary.push(`${explorer.name} part seul et découvre une seconde entrée. Danger +1.`);
+      }
+      break;
+    }
+
+    case 'jungle_ambush': {
+      const decision = choiceId(choices.group);
+      if (decision === 'return') {
+        addGauge(next, 'signal', -1);
+        result.summary.push('Le groupe sauve le camp, mais perd la piste de la tour : Signal -1.');
+        removeFutureEvent(next, 'ravine');
+      } else if (decision === 'continue') {
+        addGauge(next, 'reserves', -2);
+        next.flags.hasMap = true;
+        result.summary.push('La tour est atteinte, mais le camp est pillé : Réserves -2.');
+      } else {
+        const volunteer = actor ?? next.players[0];
+        loseLife(volunteer);
+        addGauge(next, 'cohesion', 1);
+        result.summary.push(`${volunteer.name} fait diversion et perd une vie. Le groupe conserve ses réserves.`);
+      }
+      break;
+    }
+
+    case 'split_cache': {
+      const reporters = ids.filter((id) => id === 'report').length;
+      const hiders = Object.entries(choices).filter(([, value]) => choiceId(value) === 'hide').map(([id]) => id);
+      const stealers = Object.entries(choices).filter(([, value]) => choiceId(value) === 'steal');
+      const liars = Object.entries(choices).filter(([, value]) => choiceId(value) === 'misdirect');
+      if (reporters) {
+        addGauge(next, 'reserves', 1);
+        next.flags.hasMap = true;
+        addGauge(next, 'cohesion', 1);
+        result.summary.push('Une partie de la cache est partagée : Réserves +1, Cohésion +1.');
+      }
+      hiders.forEach((id) => {
+        const player = next.players.find((item) => item.id === id);
+        addPersonalItem(player, 'Ration cachée');
+        player.secrets.push('Tu as caché une ration découverte pendant la séparation.');
+      });
+      stealers.forEach(([actorId, value]) => {
+        const victimId = targetId(value);
+        const actorPlayer = next.players.find((player) => player.id === actorId);
+        const victim = next.players.find((player) => player.id === victimId);
+        const stolen = victim?.inventory.shift();
+        if (stolen) addPersonalItem(actorPlayer, stolen);
+        else addPersonalItem(actorPlayer, 'Objet volé');
+        recordBetrayal(next, actorId, victimId, 'Vol pendant l’expédition séparée', eventId, false);
+      });
+      liars.forEach(([actorId, value]) => {
+        const victimId = targetId(value);
+        const victim = next.players.find((player) => player.id === victimId);
+        addStatus(victim, 'Perdu dans la jungle');
+        loseLife(victim);
+        recordBetrayal(next, actorId, victimId, 'Fausse piste dans la jungle', eventId, true);
+      });
+      if (stealers.length || liars.length) {
+        result.secret = stealers.length > 0;
+        result.summary.push('La séparation a été utilisée pour trahir une ou plusieurs personnes.');
+      }
+      break;
+    }
+
+    case 'scout_route': {
+      const playerId = getEventActorId(next, event);
+      const scout = next.players.find((player) => player.id === playerId) ?? next.players[0];
+      const decision = choiceId(choices[playerId] ?? Object.values(choices)[0]);
+      if (decision === 'reveal') {
+        next.flags.hasMap = true;
+        addGauge(next, 'cohesion', 1);
+        result.summary.push(`${scout.name} révèle le tunnel. Le groupe contournera la faille.`);
+      } else if (decision === 'hide') {
+        scout.secrets.push('Tu connais seul un tunnel vers la station.');
+        addPersonalItem(scout, 'Plan du tunnel');
+        result.secret = true;
+        result.summary.push('L’éclaireur revient sans révéler la route secrète.');
+      } else {
+        addGauge(next, 'danger', 2);
+        addGauge(next, 'cohesion', -1);
+        scout.secrets.push('Tu as volontairement condamné le tunnel.');
+        result.secret = true;
+        result.summary.push('Le tunnel s’effondre. Danger +2.');
       }
       break;
     }
@@ -809,6 +1149,76 @@ export function resolveEvent(game, eventId, choices, extra = {}) {
       break;
     }
 
+    case 'revenge_offer': {
+      const playerId = getEventActorId(next, event);
+      const accused = next.players.find((player) => player.id === playerId) ?? next.players[0];
+      const decision = choiceId(choices[playerId] ?? Object.values(choices)[0]);
+      if (decision === 'forgive') {
+        next.flags.hasMap = true;
+        removeStatus(accused, 'Isolé');
+        addGauge(next, 'cohesion', 2);
+        result.summary.push(`${accused.name} partage la carte malgré l’accusation : Cohésion +2.`);
+      } else if (decision === 'demand') {
+        const victimId = targetId(choices[playerId]);
+        const victim = next.players.find((player) => player.id === victimId);
+        const payment = victim?.inventory.shift() ?? next.groupInventory.shift();
+        if (payment) addPersonalItem(accused, payment);
+        next.flags.hasMap = true;
+        recordBetrayal(next, accused.id, victimId, 'Réparation imposée après une fausse accusation', eventId, true);
+        result.summary.push(`${accused.name} obtient réparation avant de remettre la carte.`);
+      } else {
+        addGauge(next, 'danger', 2);
+        next.flags.mapFalsified = true;
+        recordBetrayal(next, accused.id, null, 'Carte falsifiée par vengeance', eventId, false);
+        result.secret = true;
+        result.summary.push('La carte rendue au groupe contient une fausse route : Danger +2.');
+      }
+      break;
+    }
+
+    case 'saboteur_cornered': {
+      const playerId = getEventActorId(next, event);
+      const saboteur = next.players.find((player) => player.id === playerId) ?? next.players[0];
+      const decision = choiceId(choices[playerId] ?? Object.values(choices)[0]);
+      if (decision === 'confess') {
+        next.flags.sabotageBlocked = true;
+        addGauge(next, 'cohesion', 1);
+        saboteur.secrets.push('Tu as avoué une partie du sabotage.');
+        result.summary.push(`${saboteur.name} avoue et livre une fréquence de la station.`);
+      } else if (decision === 'frame') {
+        const victimId = targetId(choices[playerId]);
+        next.flags.framedPlayer = victimId;
+        addStatus(next.players.find((player) => player.id === victimId), 'Soupçonné');
+        recordBetrayal(next, saboteur.id, victimId, 'Preuve fabriquée', eventId, false);
+        result.secret = true;
+        result.summary.push('Une fausse preuve est placée dans un sac.');
+      } else {
+        addGauge(next, 'signal', -2);
+        next.flags.sabotageUsed += 1;
+        result.summary.push('La radio est endommagée avant l’isolement : Signal -2.');
+      }
+      break;
+    }
+
+    case 'uneasy_truce': {
+      const decision = choiceId(choices.group);
+      if (decision === 'evidence') {
+        next.flags.observerProof = true;
+        addGauge(next, 'cohesion', 1);
+        result.summary.push('Les indices utiles deviennent publics : Cohésion +1.');
+      } else if (decision === 'silence') {
+        addGauge(next, 'cohesion', 1);
+        if (next.plot.id === 'saboteur') addGauge(next, 'signal', -1);
+        result.summary.push('Les accusations cessent, mais un éventuel responsable garde sa liberté.');
+      } else {
+        const leader = actor ?? next.players[0];
+        next.flags.temporaryLeader = leader.id;
+        addStatus(leader, 'Responsable du groupe');
+        result.summary.push(`${leader.name} contrôlera la prochaine décision publique.`);
+      }
+      break;
+    }
+
     case 'storm': {
       const counts = Object.fromEntries(rankChoices(choices));
       const capsulePlayers = Object.entries(choices).filter(([, value]) => choiceId(value) === 'capsule').map(([id]) => id);
@@ -852,6 +1262,73 @@ export function resolveEvent(game, eventId, choices, extra = {}) {
         removeItem(next, 'Batterie');
         next.flags.hasBattery = false;
         result.summary.push('La batterie est entièrement consommée.');
+      }
+      break;
+    }
+
+    case 'beacon_reply': {
+      const decision = choiceId(choices.group);
+      if (decision === 'truth') {
+        addGauge(next, 'signal', 2);
+        if (next.flags.codeKnown) next.flags.officialFrequency = true;
+        result.summary.push('Le code complet est envoyé : Signal +2.');
+      } else if (decision === 'mask') {
+        addGauge(next, 'signal', 1);
+        next.flags.identityMasked = true;
+        result.summary.push('Le signal est masqué : Signal +1, preuves protégées.');
+      } else {
+        addGauge(next, 'signal', -1);
+        next.flags.waitedForOfficial = true;
+        result.summary.push('Le groupe attend une fréquence officielle : Signal -1.');
+      }
+      break;
+    }
+
+    case 'boat_capacity': {
+      const freeCount = ids.filter((id) => id === 'free').length;
+      const reservers = Object.entries(choices).filter(([, value]) => choiceId(value) === 'reserve').map(([id]) => id);
+      const gifts = Object.entries(choices).filter(([, value]) => choiceId(value) === 'give');
+      const sabotages = Object.entries(choices).filter(([, value]) => choiceId(value) === 'sabotage');
+      next.flags.boatCapacityBonus = Math.floor(freeCount / 2);
+      if (freeCount) result.summary.push(`${freeCount} personne${freeCount > 1 ? 's libèrent' : ' libère'} les compartiments du bateau.`);
+      reservers.forEach((id) => {
+        next.flags.boatSeatClaims[id] = id;
+        next.players.find((player) => player.id === id)?.secrets.push('Tu as réservé une place dans le bateau.');
+      });
+      gifts.forEach(([actorId, value]) => {
+        const victimId = targetId(value);
+        next.flags.boatSeatClaims[actorId] = victimId;
+        recordSupport(next, actorId, victimId, 'Place garantie dans le bateau', eventId);
+      });
+      sabotages.forEach(([actorId]) => {
+        next.flags.capacityPenalty = (next.flags.capacityPenalty ?? 0) + 1;
+        recordBetrayal(next, actorId, null, 'Siège rendu inutilisable', eventId, false);
+      });
+      if (reservers.length) result.summary.push(`${reservers.length} place${reservers.length > 1 ? 's sont réservées' : ' est réservée'} en secret.`);
+      if (sabotages.length) {
+        result.secret = true;
+        result.summary.push('Un siège a été rendu inutilisable.');
+      }
+      break;
+    }
+
+    case 'medical_protocol': {
+      const decision = choiceId(choices.group);
+      if (decision === 'weakest') {
+        const target = firstTargetByLife(next);
+        healPlayer(target, 3);
+        result.summary.push(`${target.name} est entièrement stabilisé.`);
+      } else if (decision === 'all') {
+        next.players.forEach((player) => addStatus(player, 'Protégé'));
+        addGauge(next, 'danger', 1);
+        result.summary.push('Tout le groupe reçoit une protection, mais la surcharge augmente le danger.');
+      } else {
+        const contaminated = next.players.filter((player) => player.statuses.includes('Contaminé'));
+        contaminated.forEach((player) => removeStatus(player, 'Contaminé'));
+        const revealed = next.betrayalLog.filter((item) => item.label === 'Gourde contaminée');
+        revealed.forEach((item) => { item.discovered = true; });
+        if (revealed.length) addGauge(next, 'cohesion', -1);
+        result.summary.push(revealed.length ? 'Le système révèle qui a saboté les gourdes.' : 'Aucune contamination volontaire n’est détectée.');
       }
       break;
     }
@@ -1044,8 +1521,11 @@ export function resolveEvent(game, eventId, choices, extra = {}) {
       result.summary.push('La décision est enregistrée.');
   }
 
+  applyPromiseOutcomes(next, event, choices, result);
+  applyTimeoutEffects(next, event, result, timedOutIds, groupTimedOut);
+  applyBranching(next, eventId, choices, extra, result);
   if (next.flags.scoutHint) next.flags.scoutHint = false;
-  next.history.push({ eventId, choices: clone(choices), extra: clone(extra), resolvedAt: new Date().toISOString() });
+  next.history.push({ eventId, choices: clone(choices), extra: { ...clone(extra), timedOutIds }, resolvedAt: new Date().toISOString() });
   next.eventIndex += 1;
   if (!next.complete) {
     const upcoming = getCurrentEvent(next);

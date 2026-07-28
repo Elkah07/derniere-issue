@@ -6,6 +6,7 @@ import {
   getCurrentEvent,
   getEventActorId,
   resolveEvent,
+  registerPromises,
   upgradeSavedGame,
   useAbility,
 } from './gameEngine.js';
@@ -44,6 +45,13 @@ let ui = {
   result: null,
   abilityResult: null,
   abilityTargets: {},
+  discussionPromises: [],
+  promiseDraft: { playerId: null, promiseId: null, targetId: '' },
+  timedOutIds: [],
+  timerHandle: null,
+  timerDeadline: null,
+  timerRemaining: null,
+  timerPhase: null,
 };
 
 function escapeHtml(value) {
@@ -81,6 +89,56 @@ function toggleSetting(key) {
   applySettings();
   if (key === 'vibrations' && ui.settings.vibrations && navigator.vibrate) navigator.vibrate(35);
   render();
+}
+
+
+function clearCountdown() {
+  if (ui.timerHandle) window.clearInterval(ui.timerHandle);
+  ui.timerHandle = null;
+  ui.timerDeadline = null;
+  ui.timerRemaining = null;
+  ui.timerPhase = null;
+  document.documentElement.classList.toggle('countdown-critical', false);
+}
+
+function updateCountdownDom() {
+  const value = document.querySelector('[data-countdown-value]');
+  const fill = document.querySelector('[data-countdown-fill]');
+  if (value) value.textContent = ui.timerRemaining == null ? '∞' : String(ui.timerRemaining);
+  if (fill) {
+    const total = Number(fill.dataset.total ?? 1);
+    const percent = ui.timerRemaining == null ? 100 : Math.max(0, Math.min(100, (ui.timerRemaining / total) * 100));
+    fill.style.width = `${percent}%`;
+  }
+  document.documentElement.classList.toggle('countdown-critical', ui.timerRemaining != null && ui.timerRemaining <= 5);
+}
+
+function startCountdown(seconds, phase, onExpire) {
+  clearCountdown();
+  if (!ui.settings.timers || !seconds) {
+    ui.timerRemaining = null;
+    updateCountdownDom();
+    return;
+  }
+  ui.timerPhase = phase;
+  ui.timerDeadline = Date.now() + (seconds * 1000);
+  const tick = () => {
+    ui.timerRemaining = Math.max(0, Math.ceil((ui.timerDeadline - Date.now()) / 1000));
+    updateCountdownDom();
+    if (ui.timerRemaining <= 0) {
+      clearCountdown();
+      if (ui.settings.vibrations && navigator.vibrate) navigator.vibrate([120, 70, 120]);
+      onExpire();
+    }
+  };
+  tick();
+  ui.timerHandle = window.setInterval(tick, 250);
+}
+
+function countdownMarkup(seconds, label) {
+  if (!ui.settings.timers) return `<div class="countdown disabled"><span>⏳</span><div><strong>${escapeHtml(label)}</strong><small>Chrono désactivé dans les réglages</small></div></div>`;
+  const remaining = ui.timerRemaining ?? seconds;
+  return `<div class="countdown"><span>⏳</span><div class="countdown-copy"><strong>${escapeHtml(label)}</strong><small>Sans décision, la situation choisira à votre place.</small><div class="countdown-track"><i data-countdown-fill data-total="${seconds}" style="width:${Math.max(0, Math.min(100, (remaining / seconds) * 100))}%"></i></div></div><b data-countdown-value>${remaining}</b></div>`;
 }
 
 function currentEvent() {
@@ -142,6 +200,7 @@ function enterChapter() {
 function beginEvent() {
   const event = currentEvent();
   if (!event) return;
+  clearCountdown();
   ui.result = null;
   ui.draftChoices = {};
   ui.privateTurnIndex = 0;
@@ -149,18 +208,57 @@ function beginEvent() {
   ui.pendingChoice = null;
   ui.selectedGroupChoice = null;
   ui.actorId = ui.game.players[0]?.id ?? null;
+  ui.timedOutIds = [];
+  ui.discussionPromises = [];
+  ui.promiseDraft = {
+    playerId: ui.game.players[0]?.id ?? null,
+    promiseId: event.promiseOptions?.[0]?.id ?? null,
+    targetId: '',
+  };
+
+  if ((event.discussionSeconds ?? 0) > 0) {
+    setScreen('discussion');
+    startCountdown(event.discussionSeconds, 'discussion', startChoicePhase);
+    return;
+  }
+  startChoicePhase();
+}
+
+function startChoicePhase() {
+  clearCountdown();
+  const event = currentEvent();
+  if (!event) return;
+  if (ui.discussionPromises.length) {
+    ui.game = registerPromises(ui.game, event.id, ui.discussionPromises);
+    saveGame(ui.game);
+  }
 
   if (event.mode === 'group') {
     setScreen('groupChoice');
+    startCountdown(event.decisionSeconds ?? 25, 'decision', submitGroupTimeout);
     return;
   }
 
-  if (event.mode === 'privateOne') {
-    ui.privateOrder = [getEventActorId(ui.game, event)];
-  } else {
-    ui.privateOrder = ui.game.players.map((player) => player.id);
-  }
+  if (event.mode === 'privateOne') ui.privateOrder = [getEventActorId(ui.game, event)];
+  else ui.privateOrder = ui.game.players.map((player) => player.id);
   setScreen('privateChoice');
+}
+
+function addDiscussionPromise() {
+  const event = currentEvent();
+  const option = event?.promiseOptions?.find((item) => item.id === ui.promiseDraft.promiseId);
+  if (!event || !option || !ui.promiseDraft.playerId) return;
+  const duplicate = ui.discussionPromises.some((promise) => promise.playerId === ui.promiseDraft.playerId && promise.promiseId === option.id);
+  if (duplicate) return;
+  ui.discussionPromises.push({
+    eventId: event.id,
+    playerId: ui.promiseDraft.playerId,
+    targetId: ui.promiseDraft.targetId || null,
+    promiseId: option.id,
+    label: option.label,
+    expectedChoiceIds: option.expectedChoiceIds,
+  });
+  render();
 }
 
 function currentPrivatePlayer() {
@@ -168,14 +266,16 @@ function currentPrivatePlayer() {
   return ui.game.players.find((player) => player.id === id) ?? ui.game.players[0];
 }
 
-function submitPrivateChoice(choiceId, selectedTargetId = null) {
+function submitPrivateChoice(choiceId, selectedTargetId = null, timedOut = false) {
+  clearCountdown();
   const player = currentPrivatePlayer();
   ui.draftChoices[player.id] = selectedTargetId ? { choiceId, targetId: selectedTargetId } : choiceId;
+  if (timedOut && !ui.timedOutIds.includes(player.id)) ui.timedOutIds.push(player.id);
   ui.pendingChoice = null;
   ui.passReady = false;
 
   if (ui.privateTurnIndex >= ui.privateOrder.length - 1) {
-    const { game, result } = resolveEvent(ui.game, currentEvent().id, ui.draftChoices);
+    const { game, result } = resolveEvent(ui.game, currentEvent().id, ui.draftChoices, { timeout: ui.timedOutIds.length > 0, timedOutIds: ui.timedOutIds });
     ui.game = game;
     ui.result = result;
     saveGame(ui.game);
@@ -187,8 +287,14 @@ function submitPrivateChoice(choiceId, selectedTargetId = null) {
   render();
 }
 
+function submitPrivateTimeout() {
+  const event = currentEvent();
+  submitPrivateChoice(event?.timeoutChoice ?? 'inaction', null, true);
+}
+
 function submitGroupChoice() {
   if (!ui.selectedGroupChoice) return;
+  clearCountdown();
   const event = currentEvent();
   const selected = event.choices.find((choice) => choice.id === ui.selectedGroupChoice);
   if (selected?.requiresActor && !ui.actorId) return;
@@ -198,6 +304,22 @@ function submitGroupChoice() {
     event.id,
     { group: ui.selectedGroupChoice },
     { actorId: ui.actorId, volunteerId: ui.actorId },
+  );
+  ui.game = game;
+  ui.result = result;
+  saveGame(ui.game);
+  setScreen('result');
+}
+
+function submitGroupTimeout() {
+  const event = currentEvent();
+  if (!event) return;
+  const fallback = event.timeoutChoice ?? getAvailableChoices(ui.game, event)[0]?.id;
+  const { game, result } = resolveEvent(
+    ui.game,
+    event.id,
+    { group: fallback },
+    { actorId: ui.actorId, volunteerId: ui.actorId, timeout: true },
   );
   ui.game = game;
   ui.result = result;
@@ -270,7 +392,7 @@ function renderHome() {
             <span class="adventure-meta"><i>AVENTURE 01</i><i>COMPLÈTE</i></span>
             <strong>LE <em>CRASH</em></strong>
             <span>Après l’impact, l’île ne sera pas votre seul danger.</span>
-            <span class="card-stats">2–8 joueurs <b>·</b> 7 chapitres <b>·</b> 8 issues</span>
+            <span class="card-stats">2–8 joueurs <b>·</b> chemins variables <b>·</b> 8 issues</span>
             <span class="discover-link">Découvrir l’aventure <b>›</b></span>
           </span>
         </button>
@@ -292,7 +414,7 @@ function renderHome() {
         <button class="menu-tile" data-action="settings"><span class="tile-icon">⚙</span><span><strong>Réglages</strong><small>Confort et accessibilité</small></span></button>
         <div class="menu-tile status-tile"><span class="tile-icon">⌁</span><span><strong>Hors ligne</strong><small>Un seul téléphone suffit</small></span></div>
       </nav>
-      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.3.0</footer>
+      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.5.0</footer>
     </main>
   `;
 }
@@ -334,7 +456,7 @@ function renderSettings() {
   app.innerHTML = `
     <main class="shell settings-shell">
       <header class="topbar"><button class="icon-button" data-action="home">←</button><div><p class="kicker">MENU PRINCIPAL</p><h2>Réglages</h2></div></header>
-      <section class="settings-group"><p class="settings-label">JEU</p>${settingRow('sound', '♪', 'Sons du jeu', 'Effets sonores et ambiance')}${settingRow('vibrations', '⌁', 'Vibrations', 'Retour tactile pendant les choix')}${settingRow('confirmRestart', '↺', 'Confirmer avant de recommencer', 'Évite d’effacer une partie par erreur')}</section>
+      <section class="settings-group"><p class="settings-label">JEU</p>${settingRow('sound', '♪', 'Sons du jeu', 'Effets sonores et ambiance')}${settingRow('vibrations', '⌁', 'Vibrations', 'Retour tactile pendant les choix')}${settingRow('timers', '⏳', 'Chronos narratifs', 'Décisions sous pression et conséquences en cas d’inaction')}${settingRow('confirmRestart', '↺', 'Confirmer avant de recommencer', 'Évite d’effacer une partie par erreur')}</section>
       <section class="settings-group"><p class="settings-label">ACCESSIBILITÉ</p>${settingRow('largeText', 'Aa', 'Texte agrandi', 'Améliore la lisibilité')}${settingRow('highContrast', '◐', 'Contraste renforcé', 'Éclaircit les textes et contours')}${settingRow('reducedMotion', '◌', 'Réduire les animations', 'Limite les mouvements')}</section>
       <section class="settings-group danger-zone"><p class="settings-label">DONNÉES</p>${ui.game ? '<button class="settings-action danger-text" data-action="delete-save"><span>Supprimer la partie en cours</span><b>›</b></button>' : '<div class="settings-empty">Aucune partie sauvegardée.</div>'}<button class="settings-action" data-action="reset-settings"><span>Réinitialiser les réglages</span><b>›</b></button></section>
       <p class="settings-note">La partie reste enregistrée uniquement dans ce navigateur.</p>
@@ -348,8 +470,9 @@ function renderRules() {
       <section class="rules-hero panel"><span>2–8</span><div><strong>Un téléphone suffit</strong><p>Faites circuler l’appareil lors des choix et briefings secrets.</p></div></section>
       <section class="rules-list">
         <article><b>01</b><div><h3>Recevez votre briefing</h3><p>Chaque joueur découvre une capacité et parfois un objectif personnel.</p></div></article>
-        <article><b>02</b><div><h3>Choisissez sans tout montrer</h3><p>Les décisions publiques et secrètes modifient l’histoire, les vies et les ressources.</p></div></article>
-        <article><b>03</b><div><h3>Atteignez une issue</h3><p>Les sept chapitres mènent à huit fins principales et à un bilan complet.</p></div></article>
+        <article><b>02</b><div><h3>Parlez avant de choisir</h3><p>Le chrono lance une vraie discussion orale : négociez, promettez, accusez ou mentez.</p></div></article>
+        <article><b>03</b><div><h3>Décidez sous pression</h3><p>Si personne ne valide à temps, l’histoire applique une conséquence adaptée à la scène.</p></div></article>
+        <article><b>04</b><div><h3>Ouvrez votre propre chemin</h3><p>Le camp, l’expédition, le jugement et les systèmes choisis déclenchent des événements exclusifs.</p></div></article>
       </section>
       <div class="tip-card"><span>!</span><p><strong>Conseil</strong> Ne montrez jamais un écran privé. Vous pouvez dire la vérité, mentir ou ne rien révéler.</p></div>
       <button class="button primary" data-action="home">Choisir une aventure</button>
@@ -418,10 +541,37 @@ function renderGame() {
     <main class="shell game-shell">
       <header class="topbar compact"><button class="icon-button" data-action="home">⌂</button><div><p class="kicker">DERNIÈRE ISSUE · LE CRASH</p><h2>Chapitre ${event.chapter} · ${escapeHtml(chapter.title)}</h2></div><button class="icon-button danger-button" data-action="reset">↺</button></header>
       <section class="gauges">${gaugeCard('🥫', 'Réserves', ui.game.gauges.reserves)}${gaugeCard('⛺', 'Refuge', ui.game.gauges.shelter)}${gaugeCard('📡', 'Signal', ui.game.gauges.signal)}${gaugeCard('⚠️', 'Danger', ui.game.gauges.danger)}</section>
-      <section class="story-card"><div class="event-number">ÉTAPE ${ui.game.eventIndex + 1}/${ui.game.eventSequence.length}${event.secondary ? ' · IMPRÉVU' : ''}</div><p class="kicker">CHAPITRE ${event.chapter} · ${escapeHtml(chapter.title).toUpperCase()}</p><h2>${escapeHtml(event.title)}</h2>${renderParagraphs(getEventNarrative(ui.game, event), 'event-narrative')}${hint}<button class="button primary" data-action="begin-event">Faire les choix</button></section>
+      <section class="story-card"><div class="event-number">ÉTAPE ${ui.game.eventIndex + 1}/${ui.game.eventSequence.length}${event.secondary ? ' · IMPRÉVU' : ''}${event.branch ? ' · CHEMIN EXCLUSIF' : ''}</div><p class="kicker">CHAPITRE ${event.chapter} · ${escapeHtml(chapter.title).toUpperCase()}</p><h2>${escapeHtml(event.title)}</h2>${renderParagraphs(getEventNarrative(ui.game, event), 'event-narrative')}${hint}<div class="oral-cue"><span>🗣️</span><p><strong>Cette scène se joue à voix haute.</strong><br>${event.discussionSeconds ? `Vous aurez ${event.discussionSeconds} secondes pour discuter avant les choix.` : 'Lisez la scène, puis passez le téléphone pour les décisions privées.'}</p></div><button class="button primary" data-action="begin-event">${event.discussionSeconds ? 'Lancer la discussion' : 'Faire les choix'}</button></section>
       <section class="group-bag"><div><p class="step">RESSOURCES COMMUNES</p><div class="inventory common-inventory">${ui.game.groupInventory.length ? ui.game.groupInventory.map((item) => `<span>${escapeHtml(item)}</span>`).join('') : '<span>Aucun objet commun</span>'}</div></div><button class="button secondary small-button" data-action="abilities">Capacités</button></section>
       <section><div class="section-heading"><div><p class="step">SURVIVANTS</p><h3>État du groupe</h3></div><span class="cohesion-pill">🤝 Cohésion ${ui.game.gauges.cohesion}</span></div><div class="players-stack">${ui.game.players.map(playerCard).join('')}</div></section>
     </main>`;
+}
+
+
+function renderDiscussion() {
+  const event = currentEvent();
+  const promises = ui.discussionPromises.map((promise, index) => {
+    const player = ui.game.players.find((item) => item.id === promise.playerId);
+    const target = ui.game.players.find((item) => item.id === promise.targetId);
+    return `<li><span><strong>${escapeHtml(player?.name ?? 'Joueur')}</strong> : ${escapeHtml(promise.label)}${target ? ` à ${escapeHtml(target.name)}` : ''}</span><button data-remove-promise="${index}" aria-label="Retirer">×</button></li>`;
+  }).join('');
+  const promisePanel = event.promiseOptions?.length ? `
+    <section class="promise-panel">
+      <div class="section-heading"><div><p class="step">PROMESSES PUBLIQUES</p><h3>Vous pouvez vous engager à voix haute</h3></div></div>
+      <p>Une promesse enregistrée sera comparée au choix secret. La briser affectera la confiance et apparaîtra dans le bilan.</p>
+      <div class="promise-form">
+        <label><span>Qui promet ?</span><select data-promise-player>${ui.game.players.map((player) => `<option value="${player.id}" ${ui.promiseDraft.playerId === player.id ? 'selected' : ''}>${escapeHtml(player.name)}</option>`).join('')}</select></label>
+        <label><span>Promesse</span><select data-promise-type>${event.promiseOptions.map((option) => `<option value="${option.id}" ${ui.promiseDraft.promiseId === option.id ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select></label>
+        <label><span>À propos de quelqu’un ? <small>facultatif</small></span><select data-promise-target><option value="">Tout le groupe</option>${ui.game.players.filter((player) => player.id !== ui.promiseDraft.playerId).map((player) => `<option value="${player.id}" ${ui.promiseDraft.targetId === player.id ? 'selected' : ''}>${escapeHtml(player.name)}</option>`).join('')}</select></label>
+        <button class="button secondary" data-action="add-promise">Enregistrer la promesse</button>
+      </div>
+      ${promises ? `<ul class="promise-list">${promises}</ul>` : '<p class="empty-promises">Aucune promesse enregistrée. Les paroles restent libres.</p>'}
+    </section>` : '';
+
+  app.innerHTML = `<main class="shell discussion-shell"><header class="choice-header"><p class="kicker">CHAPITRE ${event.chapter} · DISCUSSION ORALE</p><h2>${escapeHtml(event.title)}</h2><p>${escapeHtml(event.prompt)}</p></header>${countdownMarkup(event.discussionSeconds ?? 60, 'Temps de discussion')}
+    <section class="discussion-card"><div class="discussion-icon">🗣️</div><h3>Parlez-vous réellement</h3><p>Défendez une option, négociez un objet, demandez une preuve, formez une alliance ou mentez. L’application n’écoute rien : c’est à vous de convaincre les autres.</p><div class="discussion-rules"><span>Vous pouvez mentir</span><span>Vous pouvez garder le silence</span><span>Vous pouvez changer d’avis</span></div></section>
+    ${promisePanel}
+    <button class="button primary sticky-action" data-action="start-choice-phase">Passer aux choix maintenant</button></main>`;
 }
 
 function renderPrivateChoice() {
@@ -441,7 +591,7 @@ function renderPrivateChoice() {
   }
 
   const cards = available.map((choice) => `<button class="choice-card" data-choice="${choice.id}" data-needs-target="${choice.requiresTarget ? 'true' : 'false'}"><span class="choice-icon">${choice.icon}</span><span class="choice-copy"><strong>${escapeHtml(choice.label)}</strong><small>${escapeHtml(choice.description)}</small></span><span class="choice-arrow">›</span></button>`).join('');
-  app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">CHAPITRE ${event.chapter} · CHOIX SECRET</p><h2>${escapeHtml(player.name)}, à toi.</h2><p>${escapeHtml(event.prompt)}</p></header><div class="choice-stack">${cards}</div><p class="privacy-hint">🔒 Ton choix sera caché pendant la résolution.</p></main>`;
+  app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">CHAPITRE ${event.chapter} · CHOIX SECRET</p><h2>${escapeHtml(player.name)}, à toi.</h2><p>${escapeHtml(event.prompt)}</p></header>${countdownMarkup(event.decisionSeconds ?? 20, 'Temps pour choisir')}<div class="choice-stack">${cards}</div><p class="privacy-hint">🔒 Ton choix sera caché pendant la résolution. À zéro, l’inaction aura une conséquence.</p></main>`;
 }
 
 function renderGroupChoice() {
@@ -453,14 +603,14 @@ function renderGroupChoice() {
   const cards = available.map((choice) => `<button class="choice-card ${ui.selectedGroupChoice === choice.id ? 'selected' : ''}" data-group-choice="${choice.id}"><span class="choice-icon">${choice.icon}</span><span class="choice-copy"><strong>${escapeHtml(choice.label)}</strong><small>${escapeHtml(choice.description)}</small></span><span class="choice-check">${ui.selectedGroupChoice === choice.id ? '✓' : ''}</span></button>`).join('');
   const selected = available.find((choice) => choice.id === ui.selectedGroupChoice);
   const actorSelect = selected?.requiresActor ? `<label class="field volunteer-field"><span>${escapeHtml(selected.actorLabel ?? 'Qui agit ?')}</span><select data-actor>${ui.game.players.map((player) => `<option value="${player.id}" ${ui.actorId === player.id ? 'selected' : ''}>${escapeHtml(player.name)}</option>`).join('')}</select></label>` : '';
-  app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">CHAPITRE ${event.chapter} · DÉCISION DU GROUPE</p><h2>${escapeHtml(event.title)}</h2><p>${escapeHtml(event.prompt)}</p></header><div class="choice-stack">${cards}</div>${actorSelect}<button class="button primary sticky-action" data-action="confirm-group" ${ui.selectedGroupChoice ? '' : 'disabled'}>Valider la décision</button></main>`;
+  app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">CHAPITRE ${event.chapter} · DÉCISION DU GROUPE</p><h2>${escapeHtml(event.title)}</h2><p>${escapeHtml(event.prompt)}</p></header>${countdownMarkup(event.decisionSeconds ?? 25, 'Temps pour valider')}<div class="choice-stack">${cards}</div>${actorSelect}<button class="button primary sticky-action" data-action="confirm-group" ${ui.selectedGroupChoice ? '' : 'disabled'}>Valider la décision</button></main>`;
 }
 
 function renderResult() {
   const summary = ui.result.summary.map((line) => `<li>${escapeHtml(line)}</li>`).join('');
   const narrative = getResultNarrative(ui.game, ui.result);
   const nextText = ui.game.complete ? 'Découvrir votre issue' : ui.game.chapterTransition ? `Terminer le chapitre ${ui.result.chapter ?? ''}` : 'Continuer';
-  app.innerHTML = `<main class="shell result-shell"><section class="result-card"><div class="result-icon">✦</div><p class="kicker">CONSÉQUENCES</p><h2>${escapeHtml(ui.result.title)}</h2>${renderParagraphs(narrative, 'result-narrative')}<div class="mechanical-impact"><strong>Ce que cela change</strong><ul>${summary}</ul></div>${ui.result.secret ? '<div class="secret-result"><strong>Une partie de cette conséquence reste secrète.</strong><p>La vérité pourra apparaître plus tard dans l’aventure ou dans le bilan final.</p></div>' : ''}<div class="mini-gauges"><span>🥫 ${ui.game.gauges.reserves}/5</span><span>⛺ ${ui.game.gauges.shelter}/5</span><span>📡 ${ui.game.gauges.signal}/5</span><span>⚠️ ${ui.game.gauges.danger}/5</span><span>🤝 ${ui.game.gauges.cohesion}</span></div><button class="button primary" data-action="continue">${escapeHtml(nextText)}</button></section></main>`;
+  app.innerHTML = `<main class="shell result-shell"><section class="result-card"><div class="result-icon">✦</div><p class="kicker">CONSÉQUENCES</p><h2>${escapeHtml(ui.result.title)}</h2>${renderParagraphs(narrative, 'result-narrative')}<div class="mechanical-impact"><strong>Ce que cela change</strong><ul>${summary}</ul></div>${ui.result.timedOut ? '<div class="timeout-result"><strong>⏳ Le temps a expiré.</strong><p>L’inaction a déclenché une conséquence propre à cette scène.</p></div>' : ''}${ui.result.secret ? '<div class="secret-result"><strong>Une partie de cette conséquence reste secrète.</strong><p>La vérité pourra apparaître plus tard dans l’aventure ou dans le bilan final.</p></div>' : ''}<div class="mini-gauges"><span>🥫 ${ui.game.gauges.reserves}/5</span><span>⛺ ${ui.game.gauges.shelter}/5</span><span>📡 ${ui.game.gauges.signal}/5</span><span>⚠️ ${ui.game.gauges.danger}/5</span><span>🤝 ${ui.game.gauges.cohesion}</span></div><button class="button primary" data-action="continue">${escapeHtml(nextText)}</button></section></main>`;
 }
 
 function renderAbilities() {
@@ -479,11 +629,21 @@ function renderEnding() {
   const epilogue = getEndingNarrative(ui.game);
   const echoes = getStoryEchoes(ui.game);
   const roleReveal = ui.game.players.map((player) => `<article class="reveal-player"><div class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</div><div><strong>${escapeHtml(player.name)}</strong><span>${escapeHtml(player.role.title)} · ${escapeHtml(player.ability.title)}</span><small>${player.lives} vie${player.lives > 1 ? 's' : ''} restante${player.lives > 1 ? 's' : ''}</small></div></article>`).join('');
+  const betrayalReveal = (ui.game.betrayalLog ?? []).map((item) => {
+    const actor = ui.game.players.find((player) => player.id === item.actorId)?.name ?? 'Une personne';
+    const victim = ui.game.players.find((player) => player.id === item.targetId)?.name;
+    return `<li><strong>${escapeHtml(actor)}</strong> : ${escapeHtml(item.label)}${victim ? ` contre <strong>${escapeHtml(victim)}</strong>` : ''}</li>`;
+  }).join('');
+  const brokenPromises = (ui.game.flags.promises ?? []).filter((promise) => promise.resolved && !promise.honored).map((promise) => {
+    const player = ui.game.players.find((item) => item.id === promise.playerId)?.name ?? 'Une personne';
+    return `<li><strong>${escapeHtml(player)}</strong> avait promis : « ${escapeHtml(promise.label)} ».</li>`;
+  }).join('');
   app.innerHTML = `
     <main class="shell ending-shell">
       <section class="ending-hero"><p class="kicker">VOTRE DERNIÈRE ISSUE</p><div class="ending-icon">${ending.icon}</div><h1>${escapeHtml(ending.title)}</h1>${renderParagraphs(epilogue, 'ending-epilogue')}</section>
       <section class="ending-panel"><p class="step">BILAN DE L’ÉVACUATION</p><div class="ending-lists"><div><strong>Ont quitté l’île</strong><p>${escaped.length ? escapeHtml(escaped.join(', ')) : 'Personne'}</p></div><div><strong>Sont restés</strong><p>${stayed.length ? escapeHtml(stayed.join(', ')) : 'Personne'}</p></div></div><div class="final-gauges">${gaugeCard('🥫', 'Réserves', ui.game.gauges.reserves)}${gaugeCard('📡', 'Signal', ui.game.gauges.signal)}${gaugeCard('⚠️', 'Danger', ui.game.gauges.danger)}</div></section>
       ${echoes.length ? `<section class="memory-panel"><p class="step">LES CHOIX QUI VOUS ONT SUIVIS</p><ul>${echoes.map((echo) => `<li>${escapeHtml(echo)}</li>`).join('')}</ul></section>` : ''}
+      ${(betrayalReveal || brokenPromises) ? `<section class="betrayal-panel"><p class="step">PROMESSES ET TRAHISONS RÉVÉLÉES</p>${brokenPromises ? `<h3>Promesses brisées</h3><ul>${brokenPromises}</ul>` : ''}${betrayalReveal ? `<h3>Actions contre les autres</h3><ul>${betrayalReveal}</ul>` : ''}</section>` : ''}
       <section class="truth-panel"><p class="step">CE QUI S’EST RÉELLEMENT PASSÉ</p><h2>${escapeHtml(ui.game.plot.id === 'accident' ? 'Il n’y avait aucun traître.' : ui.game.plot.id === 'saboteur' ? 'Un saboteur se trouvait parmi vous.' : 'Une personne avait un objectif caché.')}</h2><p>${escapeHtml(ending.truth)}</p></section>
       <section><div class="section-heading"><div><p class="step">RÉVÉLATION</p><h3>Rôles et capacités</h3></div></div><div class="reveal-list">${roleReveal}</div></section>
       <section class="ending-actions"><button class="button primary" data-action="replay">Rejouer avec le même groupe</button><button class="button secondary" data-action="finish-home">Retour aux aventures</button></section>
@@ -500,6 +660,7 @@ function render() {
   if (ui.screen === 'briefing') renderBriefing();
   if (ui.screen === 'chapter') renderChapter();
   if (ui.screen === 'game') renderGame();
+  if (ui.screen === 'discussion') renderDiscussion();
   if (ui.screen === 'privateChoice') renderPrivateChoice();
   if (ui.screen === 'groupChoice') renderGroupChoice();
   if (ui.screen === 'result') renderResult();
@@ -511,6 +672,7 @@ app.addEventListener('click', (event) => {
   const target = event.target.closest('button');
   if (!target) return;
   const action = target.dataset.action;
+  if (['new-game', 'open-crash', 'settings', 'rules', 'home', 'finish-home', 'replay', 'reset', 'delete-save'].includes(action)) clearCountdown();
 
   if (action === 'new-game') setScreen('setup');
   if (action === 'open-crash') setScreen('adventure');
@@ -549,7 +711,10 @@ app.addEventListener('click', (event) => {
   if (action === 'ready-private') {
     ui.passReady = true;
     render();
+    startCountdown(currentEvent()?.decisionSeconds ?? 20, 'private-decision', submitPrivateTimeout);
   }
+  if (action === 'start-choice-phase') startChoicePhase();
+  if (action === 'add-promise') addDiscussionPromise();
   if (action === 'cancel-target') {
     ui.pendingChoice = null;
     render();
@@ -579,6 +744,11 @@ app.addEventListener('click', (event) => {
   if (target.dataset.duration) { ui.setup.duration = target.dataset.duration; render(); }
   if (target.dataset.audience) { ui.setup.audience = target.dataset.audience; render(); }
 
+  if (target.dataset.removePromise !== undefined) {
+    ui.discussionPromises.splice(Number(target.dataset.removePromise), 1);
+    render();
+  }
+
   if (target.dataset.choice) {
     const choice = getAvailableChoices(ui.game, currentEvent(), currentPrivatePlayer().id).find((item) => item.id === target.dataset.choice);
     if (choice?.requiresTarget) {
@@ -604,6 +774,13 @@ app.addEventListener('input', (event) => {
 app.addEventListener('change', (event) => {
   if (event.target.matches('[data-actor]')) ui.actorId = event.target.value;
   if (event.target.dataset.abilityTarget) ui.abilityTargets[event.target.dataset.abilityTarget] = event.target.value;
+  if (event.target.matches('[data-promise-player]')) {
+    ui.promiseDraft.playerId = event.target.value;
+    if (ui.promiseDraft.targetId === event.target.value) ui.promiseDraft.targetId = '';
+    render();
+  }
+  if (event.target.matches('[data-promise-type]')) ui.promiseDraft.promiseId = event.target.value;
+  if (event.target.matches('[data-promise-target]')) ui.promiseDraft.targetId = event.target.value;
 });
 
 render();
