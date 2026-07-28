@@ -86,12 +86,40 @@ button { font: inherit; }
 .discover-link { display: inline-flex; align-items: center; gap: 8px; margin-top: 24px; color: var(--lime); font-weight: 800; }
 .discover-link b { font-size: 1.5rem; }
 .future-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
-.future-card { display: grid; grid-template-columns: 58px 1fr; align-items: center; gap: 14px; min-height: 110px; padding: 18px; opacity: .64; }
-.future-number { font-family: Impact, sans-serif; font-size: 2.2rem; color: rgba(199,239,90,.55); }
-.future-card small, .future-card strong, .future-card em { display: block; }
-.future-card small { color: var(--muted); font-size: .57rem; letter-spacing: .12em; }
-.future-card strong { margin: 4px 0; }
-.future-card em { color: var(--lime); font-size: .68rem; font-style: normal; }
+.future-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: 180px 1fr;
+  min-height: 405px;
+  background: linear-gradient(150deg, rgba(20,49,44,.94), rgba(6,20,18,.98));
+}
+.future-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.025);
+  pointer-events: none;
+}
+.future-art { position: relative; display: block; overflow: hidden; border-bottom: 1px solid var(--line); }
+.future-body { position: relative; z-index: 2; display: flex; flex-direction: column; padding: 22px; }
+.future-topline { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.future-topline small { color: var(--muted); font-size: .58rem; font-weight: 900; letter-spacing: .14em; }
+.future-topline > i { padding: 5px 8px; border: 1px solid rgba(199,239,90,.24); border-radius: 99px; color: var(--lime); font-size: .55rem; font-weight: 900; font-style: normal; letter-spacing: .1em; }
+.future-body > strong { display: block; margin: 18px 0 10px; font-family: Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif; font-size: clamp(2.35rem, 5vw, 3.7rem); line-height: .86; letter-spacing: -.02em; }
+.future-body > strong em { color: var(--lime); font-style: normal; }
+.future-pitch { min-height: 63px; color: #c8d6d0; font-size: .8rem; line-height: 1.5; }
+.future-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+.future-tags i { padding: 5px 8px; border-radius: 99px; color: var(--muted); background: rgba(255,255,255,.05); font-size: .58rem; font-style: normal; }
+.locked-link { margin-top: auto; padding-top: 19px; color: var(--lime); font-size: .72rem; font-weight: 800; }
+.classified-card .future-art { background: radial-gradient(circle at 70% 25%, rgba(221,182,99,.16), transparent 30%), linear-gradient(145deg, #493b2b, #151c19 70%); }
+.classified-folder { position: absolute; left: 50%; top: 49%; color: #c5a870; font-size: 8rem; line-height: 1; opacity: .65; transform: translate(-50%,-50%) rotate(-7deg); text-shadow: 0 22px 30px rgba(0,0,0,.45); }
+.classified-stamp { position: absolute; z-index: 2; left: 50%; top: 52%; padding: 7px 12px; border: 3px solid rgba(255,120,95,.8); color: #ff927e; font-size: .7rem; font-weight: 1000; font-style: normal; letter-spacing: .17em; transform: translate(-50%,-50%) rotate(-8deg); }
+.classified-lines { position: absolute; inset: 0; opacity: .12; background: repeating-linear-gradient(0deg, transparent 0 13px, #fff 14px 15px); transform: rotate(-7deg) scale(1.2); }
+.signal-card .future-art { background: radial-gradient(circle at 50% 60%, rgba(199,239,90,.16), transparent 13%), radial-gradient(circle at 50% 60%, transparent 0 25%, rgba(199,239,90,.1) 25.5% 26%, transparent 26.5% 41%, rgba(199,239,90,.07) 41.5% 42%, transparent 42.5%), linear-gradient(160deg, #172d31, #071412); }
+.signal-orbit { position: absolute; width: 190px; height: 190px; left: 50%; top: 60%; border: 1px solid rgba(199,239,90,.18); border-radius: 50%; transform: translate(-50%,-50%); }
+.signal-tower { position: absolute; z-index: 2; left: 50%; top: 54%; color: var(--lime); font-size: 4.8rem; font-style: normal; text-shadow: 0 0 28px rgba(199,239,90,.45); transform: translate(-50%,-50%) rotate(90deg); }
+.signal-noise { position: absolute; inset: 0; opacity: .15; background: repeating-linear-gradient(0deg, transparent 0 5px, #c7ef5a 6px, transparent 7px); }
 
 .adventure-page { width: min(100%, 960px); min-height: 100vh; margin: 0 auto; padding: 22px 20px 54px; }
 .adventure-topbar { display: grid; grid-template-columns: 46px 1fr 46px; align-items: center; gap: 14px; margin-bottom: 18px; }

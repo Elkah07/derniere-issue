@@ -186,7 +186,7 @@ function renderHome() {
       <section class="library-section">
         <div class="library-heading">
           <div><p class="kicker">CHOISIR UNE AVENTURE</p><h2>Les histoires</h2></div>
-          <span>1 disponible</span>
+          <span>3 aventures · 1 disponible</span>
         </div>
 
         <button class="adventure-card crash-card" data-action="open-crash">
@@ -202,12 +202,35 @@ function renderHome() {
           </span>
         </button>
 
-        <div class="future-grid">
-          <article class="adventure-card future-card">
-            <span class="future-number">02</span><span><small>PROCHAINE AVENTURE</small><strong>Dossier classé</strong><em>Bientôt disponible</em></span>
+        <div class="future-grid" aria-label="Prochaines aventures">
+          <article class="adventure-card future-card classified-card">
+            <span class="future-art" aria-hidden="true">
+              <i class="classified-stamp">CONFIDENTIEL</i>
+              <i class="classified-folder">▰</i>
+              <i class="classified-lines"></i>
+            </span>
+            <span class="future-body">
+              <span class="future-topline"><small>AVENTURE 02</small><i>BIENTÔT</i></span>
+              <strong>DOSSIER <em>CLASSÉ</em></strong>
+              <span class="future-pitch">Un dossier interdit. Des versions incompatibles. Quelqu’un dans le groupe sait déjà pourquoi vous êtes là.</span>
+              <span class="future-tags"><i>2–8 joueurs</i><i>Enquête</i><i>Secrets</i></span>
+              <span class="locked-link">◈ En préparation</span>
+            </span>
           </article>
-          <article class="adventure-card future-card">
-            <span class="future-number">03</span><span><small>NOUVELLE ISSUE</small><strong>Signal perdu</strong><em>Bientôt disponible</em></span>
+
+          <article class="adventure-card future-card signal-card">
+            <span class="future-art" aria-hidden="true">
+              <i class="signal-orbit"></i>
+              <i class="signal-tower">⌁</i>
+              <i class="signal-noise"></i>
+            </span>
+            <span class="future-body">
+              <span class="future-topline"><small>AVENTURE 03</small><i>BIENTÔT</i></span>
+              <strong>SIGNAL <em>PERDU</em></strong>
+              <span class="future-pitch">La communication s’est coupée. Un dernier message tourne en boucle, mais il ne semble pas destiné à tout le monde.</span>
+              <span class="future-tags"><i>2–8 joueurs</i><i>Survie</i><i>Mystère</i></span>
+              <span class="locked-link">◈ En préparation</span>
+            </span>
           </article>
         </div>
       </section>
@@ -218,7 +241,7 @@ function renderHome() {
         <div class="menu-tile status-tile"><span class="tile-icon">⌁</span><span><strong>Hors ligne</strong><small>Jouez sur un seul téléphone</small></span></div>
       </nav>
 
-      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.2</footer>
+      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.2.1</footer>
     </main>
   `;
 }
