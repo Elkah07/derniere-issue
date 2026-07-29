@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'derniere-issue-save-v01';
 const SETTINGS_KEY = 'derniere-issue-settings-v01';
+const SESSION_KEY = 'derniere-issue-ui-session-v081';
 
 export const defaultSettings = {
   sound: true,
@@ -54,4 +55,19 @@ export function saveSettings(settings) {
 export function resetSettings() {
   localStorage.removeItem(SETTINGS_KEY);
   return { ...defaultSettings };
+}
+
+
+export function saveSessionState(state) {
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(state)); } catch { /* stockage indisponible */ }
+}
+
+export function loadSessionState() {
+  const raw = localStorage.getItem(SESSION_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { localStorage.removeItem(SESSION_KEY); return null; }
+}
+
+export function clearSessionState() {
+  localStorage.removeItem(SESSION_KEY);
 }

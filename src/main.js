@@ -25,10 +25,14 @@ import {
   resetSettings,
   saveGame,
   saveSettings,
+  saveSessionState,
+  loadSessionState,
+  clearSessionState,
 } from './storage.js';
 
 const app = document.querySelector('#app');
 const upgradedSave = upgradeSavedGame(loadGame());
+const restoredSession = loadSessionState();
 if (upgradedSave) saveGame(upgradedSave);
 
 let ui = {
@@ -70,6 +74,16 @@ let ui = {
   timerRemaining: null,
   timerPhase: null,
   lastTimerSoundSecond: null,
+  timerPaused: false,
+  timerExpireAction: null,
+  timerTotalSeconds: null,
+  confirmation: null,
+  confirmationReturnScreen: null,
+  pendingPrivateResolution: false,
+  dossierPlayerId: null,
+  dossierReady: false,
+  dossierReturnScreen: 'game',
+  restoredTimerPending: false,
 };
 
 let visualState = {
@@ -95,6 +109,167 @@ function renderParagraphs(paragraphs, className = 'narrative-copy') {
   return `<div class="${className}">${paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}</div>`;
 }
 
+
+
+const GRAVE_CHOICE_IDS = new Set([
+  'abandon', 'solo', 'sacrifice', 'continue', 'destroy', 'erase', 'damage',
+  'contaminate', 'steal', 'misdirect', 'mislead', 'frame', 'sabotage',
+  'capsule', 'reserve', 'extra', 'demand', 'board', 'collapse', 'decoy',
+]);
+
+const ACTIVE_SESSION_SCREENS = new Set([
+  'discussion', 'privateChoice', 'privateMask', 'groupChoice', 'confirmChoice',
+  'talentPrompt', 'afterlifePrompt', 'dossierSelect', 'privateDossier',
+]);
+
+function cohesionLabel(value) {
+  if (value >= 4) return { label: 'Groupe soudé', tone: 'strong' };
+  if (value >= 2) return { label: 'Confiance solide', tone: 'stable' };
+  if (value >= 0) return { label: 'Confiance fragile', tone: 'fragile' };
+  if (value >= -2) return { label: 'Tensions visibles', tone: 'tense' };
+  return { label: 'Au bord de la rupture', tone: 'broken' };
+}
+
+function sanitizePublicSummaryLine(line) {
+  const original = String(line ?? '');
+  const cleaned = original
+    .replace(/(?:,?\s*)Cohésion\s*[+-]\s*\d+\.?/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([.,])/g, '$1')
+    .trim();
+  if (/Cohésion/i.test(original) && (!cleaned || cleaned.length < 12 || cleaned.endsWith(':'))) {
+    return 'La confiance au sein du groupe évolue.';
+  }
+  return cleaned || 'La dynamique du groupe change.';
+}
+
+function getPublicResultSummary(result) {
+  if (!result) return [];
+  const source = Array.isArray(result.publicSummary)
+    ? result.publicSummary
+    : result.secret
+      ? ['Certaines décisions ont été enregistrées sans être révélées. Leurs effets pourront apparaître plus tard.']
+      : (result.summary ?? []);
+  return source.map(sanitizePublicSummaryLine).filter(Boolean);
+}
+
+function getPublicResultNarrative(result) {
+  if (result?.secret && !result?.publicNarrative) {
+    return [
+      'Les joueurs terminent leurs choix, mais tout ne se lit pas sur leurs visages.',
+      'Une partie de ce qui vient de se passer restera dans l’ombre jusqu’à ce qu’un indice, une conséquence ou le bilan final la révèle.',
+    ];
+  }
+  return result?.publicNarrative ?? getResultNarrative(ui.game, result);
+}
+
+function choiceNeedsConfirmation(choice) {
+  if (!choice) return false;
+  return GRAVE_CHOICE_IDS.has(choice.id)
+    || /abandon|trahir|saboter|détruire|contaminer|voler|sacrifier|laisser|faire échouer|partir immédiatement/i.test(`${choice.label} ${choice.description}`);
+}
+
+function privateInventoryMarkup(player, compact = false) {
+  const items = player?.inventory ?? [];
+  const secrets = player?.secrets ?? [];
+  return `<section class="private-inventory ${compact ? 'compact' : ''}">
+    <p class="step">TON INVENTAIRE PRIVÉ</p>
+    <div class="inventory">${items.length ? items.map((item) => `<span>${escapeHtml(item)}</span>`).join('') : '<span>Aucun objet personnel</span>'}</div>
+    ${!compact && secrets.length ? `<details><summary>Rappels secrets (${secrets.length})</summary><ul>${secrets.map((secret) => `<li>${escapeHtml(secret)}</li>`).join('')}</ul></details>` : ''}
+  </section>`;
+}
+
+function persistUiSession() {
+  if (!ui.game || ui.game.complete || !ACTIVE_SESSION_SCREENS.has(ui.screen)) return;
+  saveSessionState({
+    eventId: currentEvent()?.id ?? null,
+    screen: ui.screen,
+    privateOrder: ui.privateOrder,
+    privateTurnIndex: ui.privateTurnIndex,
+    draftChoices: ui.draftChoices,
+    pendingChoice: ui.pendingChoice,
+    selectedGroupChoice: ui.selectedGroupChoice,
+    actorId: ui.actorId,
+    timedOutIds: ui.timedOutIds,
+    discussionPromises: ui.discussionPromises,
+    promiseDraft: ui.promiseDraft,
+    talentQueue: ui.talentQueue,
+    talentEligibleIds: ui.talentEligibleIds,
+    talentIndex: ui.talentIndex,
+    afterlifeQueue: ui.afterlifeQueue,
+    afterlifeIndex: ui.afterlifeIndex,
+    timerRemaining: ui.timerRemaining,
+    timerPhase: ui.timerPhase,
+    timerTotalSeconds: ui.timerTotalSeconds,
+    pendingPrivateResolution: ui.pendingPrivateResolution,
+    confirmation: ui.confirmation,
+    confirmationReturnScreen: ui.confirmationReturnScreen,
+    dossierPlayerId: ui.dossierPlayerId,
+    dossierReturnScreen: ui.dossierReturnScreen,
+    savedAt: Date.now(),
+  });
+}
+
+function restoreUiSessionIfPossible() {
+  if (!restoredSession || !ui.game || ui.game.complete) return;
+  if (restoredSession.eventId !== currentEvent()?.id) {
+    clearSessionState();
+    return;
+  }
+  const allowed = ACTIVE_SESSION_SCREENS.has(restoredSession.screen) ? restoredSession.screen : 'game';
+  Object.assign(ui, {
+    screen: allowed,
+    privateOrder: restoredSession.privateOrder ?? [],
+    privateTurnIndex: restoredSession.privateTurnIndex ?? 0,
+    draftChoices: restoredSession.draftChoices ?? {},
+    pendingChoice: restoredSession.pendingChoice ?? null,
+    selectedGroupChoice: restoredSession.selectedGroupChoice ?? null,
+    actorId: restoredSession.actorId ?? null,
+    timedOutIds: restoredSession.timedOutIds ?? [],
+    discussionPromises: restoredSession.discussionPromises ?? [],
+    promiseDraft: restoredSession.promiseDraft ?? ui.promiseDraft,
+    talentQueue: restoredSession.talentQueue ?? [],
+    talentEligibleIds: restoredSession.talentEligibleIds ?? [],
+    talentIndex: restoredSession.talentIndex ?? 0,
+    afterlifeQueue: restoredSession.afterlifeQueue ?? [],
+    afterlifeIndex: restoredSession.afterlifeIndex ?? 0,
+    timerRemaining: restoredSession.timerRemaining ?? null,
+    timerPhase: restoredSession.timerPhase ?? null,
+    timerTotalSeconds: restoredSession.timerTotalSeconds ?? null,
+    timerPaused: Boolean(restoredSession.timerRemaining),
+    restoredTimerPending: Boolean(restoredSession.timerRemaining),
+    pendingPrivateResolution: restoredSession.pendingPrivateResolution ?? false,
+    confirmation: restoredSession.confirmation ?? null,
+    confirmationReturnScreen: restoredSession.confirmationReturnScreen ?? null,
+    dossierPlayerId: restoredSession.dossierPlayerId ?? null,
+    dossierReturnScreen: restoredSession.dossierReturnScreen ?? 'game',
+    passReady: false,
+    talentReady: false,
+    afterlifeReady: false,
+    dossierReady: false,
+  });
+}
+
+function exportGameReport() {
+  if (!ui.game) return;
+  const report = {
+    application: 'Dernière Issue',
+    version: '0.8.1',
+    generatedAt: new Date().toISOString(),
+    progress: progressLabel(),
+    currentEvent: currentEvent()?.id ?? null,
+    settings: ui.game.settings,
+    game: ui.game,
+  };
+  const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `derniere-issue-rapport-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
+}
 
 function buildSceneLayer() {
   return `
@@ -215,8 +390,13 @@ function applyVisualTheme() {
   }
 }
 
-function setScreen(screen) {
+function setScreen(screen, options = {}) {
   ui.screen = screen;
+  if (!options.skipHistory) {
+    const state = { derniereIssue: true, screen };
+    if (options.replaceHistory) window.history?.replaceState?.(state, '');
+    else window.history?.pushState?.(state, '');
+  }
   window.scrollTo({ top: 0, behavior: ui.settings.reducedMotion ? 'auto' : 'smooth' });
   render();
 }
@@ -245,8 +425,18 @@ function clearCountdown() {
   ui.timerDeadline = null;
   ui.timerRemaining = null;
   ui.timerPhase = null;
+  ui.timerExpireAction = null;
+  ui.timerTotalSeconds = null;
+  ui.timerPaused = false;
+  ui.restoredTimerPending = false;
   ui.lastTimerSoundSecond = null;
   document.documentElement.classList.toggle('countdown-critical', false);
+}
+
+function stopCountdownInterval() {
+  if (ui.timerHandle) window.clearInterval(ui.timerHandle);
+  ui.timerHandle = null;
+  ui.timerDeadline = null;
 }
 
 function updateCountdownDom() {
@@ -254,14 +444,14 @@ function updateCountdownDom() {
   const fill = document.querySelector('[data-countdown-fill]');
   if (value) value.textContent = ui.timerRemaining == null ? '∞' : String(ui.timerRemaining);
   if (fill) {
-    const total = Number(fill.dataset.total ?? 1);
+    const total = Number(fill.dataset.total ?? ui.timerTotalSeconds ?? 1);
     const percent = ui.timerRemaining == null ? 100 : Math.max(0, Math.min(100, (ui.timerRemaining / total) * 100));
     fill.style.width = `${percent}%`;
   }
-  document.documentElement.classList.toggle('countdown-critical', ui.timerRemaining != null && ui.timerRemaining <= 5);
+  document.documentElement.classList.toggle('countdown-critical', ui.timerRemaining != null && ui.timerRemaining <= 5 && !ui.timerPaused);
 }
 
-function startCountdown(seconds, phase, onExpire) {
+function startCountdown(seconds, phase, onExpire, totalSeconds = seconds) {
   clearCountdown();
   if (!ui.settings.timers || !seconds) {
     ui.timerRemaining = null;
@@ -269,29 +459,60 @@ function startCountdown(seconds, phase, onExpire) {
     return;
   }
   ui.timerPhase = phase;
+  ui.timerExpireAction = onExpire;
+  ui.timerTotalSeconds = totalSeconds;
+  ui.timerPaused = false;
+  ui.timerRemaining = seconds;
   ui.timerDeadline = Date.now() + (seconds * 1000);
   const tick = () => {
     ui.timerRemaining = Math.max(0, Math.ceil((ui.timerDeadline - Date.now()) / 1000));
     updateCountdownDom();
+    persistUiSession();
     if (ui.timerRemaining > 0 && ui.timerRemaining <= 5 && ui.lastTimerSoundSecond !== ui.timerRemaining) {
       ui.lastTimerSoundSecond = ui.timerRemaining;
       audioDirector.play('tick', 6 - ui.timerRemaining);
     }
     if (ui.timerRemaining <= 0) {
+      const expire = ui.timerExpireAction;
       clearCountdown();
       if (ui.settings.vibrations && navigator.vibrate) navigator.vibrate([120, 70, 120]);
       audioDirector.play('timeout', 1);
-      onExpire();
+      expire?.();
     }
   };
   tick();
   ui.timerHandle = window.setInterval(tick, 250);
 }
 
+function pauseCountdown() {
+  if (!ui.settings.timers || ui.timerPaused || ui.timerRemaining == null) return;
+  if (ui.timerDeadline) ui.timerRemaining = Math.max(1, Math.ceil((ui.timerDeadline - Date.now()) / 1000));
+  stopCountdownInterval();
+  ui.timerPaused = true;
+  ui.restoredTimerPending = false;
+  updateCountdownDom();
+  render();
+}
+
+function resumeCountdown() {
+  if (!ui.settings.timers || !ui.timerPaused || ui.timerRemaining == null) return;
+  const remaining = ui.timerRemaining;
+  const phase = ui.timerPhase;
+  const expire = ui.timerExpireAction ?? (
+    phase === 'discussion' ? startChoicePhase
+      : phase === 'private-decision' ? submitPrivateTimeout
+        : submitGroupTimeout
+  );
+  const total = ui.timerTotalSeconds ?? remaining;
+  startCountdown(remaining, phase, expire, total);
+  render();
+}
+
 function countdownMarkup(seconds, label) {
   if (!ui.settings.timers) return `<div class="countdown disabled"><span>⏳</span><div><strong>${escapeHtml(label)}</strong><small>Chrono désactivé dans les réglages</small></div></div>`;
   const remaining = ui.timerRemaining ?? seconds;
-  return `<div class="countdown"><span>⏳</span><div class="countdown-copy"><strong>${escapeHtml(label)}</strong><small>Sans décision, la situation choisira à votre place.</small><div class="countdown-track"><i data-countdown-fill data-total="${seconds}" style="width:${Math.max(0, Math.min(100, (remaining / seconds) * 100))}%"></i></div></div><b data-countdown-value>${remaining}</b></div>`;
+  const paused = ui.timerPaused || ui.restoredTimerPending;
+  return `<div class="countdown ${paused ? 'paused' : ''}"><span>⏳</span><div class="countdown-copy"><strong>${escapeHtml(label)}</strong><small>${paused ? 'Le chrono est en pause. Reprenez quand tout le monde est prêt.' : 'Sans décision, la situation choisira à votre place.'}</small><div class="countdown-track"><i data-countdown-fill data-total="${ui.timerTotalSeconds ?? seconds}" style="width:${Math.max(0, Math.min(100, (remaining / (ui.timerTotalSeconds ?? seconds)) * 100))}%"></i></div></div><b data-countdown-value>${remaining}</b><button class="timer-control" data-action="${paused ? 'resume-timer' : 'pause-timer'}" type="button">${paused ? '▶ Reprendre' : 'Ⅱ Pause'}</button></div>`;
 }
 
 function currentEvent() {
@@ -314,6 +535,7 @@ function resumeGame() {
 }
 
 function startNewGame() {
+  clearSessionState();
   const names = ui.setup.names.slice(0, ui.setup.playerCount);
   try {
     ui.game = createInitialGame({ names, duration: ui.setup.duration, audience: ui.setup.audience });
@@ -332,12 +554,13 @@ function replaySameGame() {
   ui.setup.playerCount = ui.game.players.length;
   ui.setup.names = ui.game.players.map((player) => player.name);
   ui.setup.duration = ui.game.settings.duration;
-  ui.setup.audience = ui.game.settings.audience;
+  ui.setup.audience = 'all';
   startNewGame();
 }
 
 function resetRun() {
   clearGame();
+  clearSessionState();
   ui.game = null;
   ui.result = null;
   setScreen('home');
@@ -345,12 +568,14 @@ function resetRun() {
 
 function enterChapter() {
   if (!ui.game) return;
+  clearSessionState();
   ui.game.chapterTransition = null;
   saveGame(ui.game);
   setScreen('game');
 }
 
 function beginEvent() {
+  clearSessionState();
   const event = currentEvent();
   if (!event) return;
   clearCountdown();
@@ -549,6 +774,36 @@ function playResolutionAudio() {
   // Les scènes fortes possèdent déjà leur propre effet. Aucun jingle générique n’est ajouté.
 }
 
+function requestChoiceConfirmation(type, choice, targetId = null) {
+  if (!choice) return;
+  if (ui.timerRemaining != null && !ui.timerPaused) pauseCountdown();
+  ui.confirmation = {
+    type,
+    choiceId: choice.id,
+    label: choice.label,
+    description: choice.description,
+    targetId,
+  };
+  ui.confirmationReturnScreen = type === 'group' ? 'groupChoice' : 'privateChoice';
+  setScreen('confirmChoice');
+}
+
+function cancelChoiceConfirmation() {
+  const returnScreen = ui.confirmationReturnScreen ?? 'game';
+  ui.confirmation = null;
+  ui.confirmationReturnScreen = null;
+  setScreen(returnScreen);
+  if (ui.timerPaused) window.setTimeout(resumeCountdown, 0);
+}
+
+function confirmChoiceSubmission() {
+  const confirmation = ui.confirmation;
+  ui.confirmation = null;
+  ui.confirmationReturnScreen = null;
+  if (!confirmation) return;
+  if (confirmation.type === 'group') submitGroupChoice(true);
+  else submitPrivateChoice(confirmation.choiceId, confirmation.targetId);
+}
 
 function submitPrivateChoice(choiceId, selectedTargetId = null, timedOut = false) {
   clearCountdown();
@@ -557,19 +812,26 @@ function submitPrivateChoice(choiceId, selectedTargetId = null, timedOut = false
   if (timedOut && !ui.timedOutIds.includes(player.id)) ui.timedOutIds.push(player.id);
   ui.pendingChoice = null;
   ui.passReady = false;
+  ui.pendingPrivateResolution = ui.privateTurnIndex >= ui.privateOrder.length - 1;
+  setScreen('privateMask');
+}
 
-  if (ui.privateTurnIndex >= ui.privateOrder.length - 1) {
+function continueAfterPrivateMask() {
+  if (ui.pendingPrivateResolution) {
+    clearSessionState();
     const { game, result } = resolveEvent(ui.game, currentEvent().id, ui.draftChoices, { timeout: ui.timedOutIds.length > 0, timedOutIds: ui.timedOutIds });
     ui.game = game;
     ui.result = result;
+    ui.pendingPrivateResolution = false;
     playResolutionAudio(result);
     saveGame(ui.game);
     setScreen('result');
     return;
   }
-
   ui.privateTurnIndex += 1;
-  render();
+  ui.pendingPrivateResolution = false;
+  ui.passReady = false;
+  setScreen('privateChoice');
 }
 
 function submitPrivateTimeout() {
@@ -577,13 +839,17 @@ function submitPrivateTimeout() {
   submitPrivateChoice(event?.timeoutChoice ?? 'inaction', null, true);
 }
 
-function submitGroupChoice() {
+function submitGroupChoice(skipConfirmation = false) {
   if (!ui.selectedGroupChoice) return;
-  clearCountdown();
   const event = currentEvent();
   const selected = event.choices.find((choice) => choice.id === ui.selectedGroupChoice);
   if (selected?.requiresActor && !ui.actorId) return;
-
+  if (!skipConfirmation && choiceNeedsConfirmation(selected)) {
+    requestChoiceConfirmation('group', selected);
+    return;
+  }
+  clearCountdown();
+  clearSessionState();
   const { game, result } = resolveEvent(
     ui.game,
     event.id,
@@ -601,6 +867,7 @@ function submitGroupTimeout() {
   const event = currentEvent();
   if (!event) return;
   const fallback = event.timeoutChoice ?? getAvailableChoices(ui.game, event)[0]?.id;
+  clearSessionState();
   const { game, result } = resolveEvent(
     ui.game,
     event.id,
@@ -687,7 +954,7 @@ function renderHome() {
         <button class="menu-tile" data-action="settings"><span class="tile-icon">⚙</span><span><strong>Réglages</strong><small>Confort et accessibilité</small></span></button>
         <div class="menu-tile status-tile"><span class="tile-icon">⌁</span><span><strong>Hors ligne</strong><small>Un seul téléphone suffit</small></span></div>
       </nav>
-      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.8</footer>
+      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.8.1</footer>
     </main>
   `;
 }
@@ -737,7 +1004,7 @@ function renderSettings() {
       <section class="settings-group"><p class="settings-label">AUDIO</p>${settingRow('sound', '♪', 'Univers sonore', 'Active ou coupe tous les sons')}${settingRow('ambience', '≈', 'Ambiances de fond', 'Mer, jungle, feu, pluie, radio et station')}${settingRow('sfx', '✦', 'Effets sonores', 'Choix, révélations, conséquences et chronos')}${volumeRow()}<button class="settings-action audio-preview" data-action="audio-preview"><span>Tester l’ambiance actuelle</span><b>▶</b></button></section>
       <section class="settings-group"><p class="settings-label">JEU</p>${settingRow('vibrations', '⌁', 'Vibrations', 'Retour tactile pendant les choix')}${settingRow('timers', '⏳', 'Chronos narratifs', 'Décisions sous pression et conséquences en cas d’inaction')}${settingRow('confirmRestart', '↺', 'Confirmer avant de recommencer', 'Évite d’effacer une partie par erreur')}</section>
       <section class="settings-group"><p class="settings-label">ACCESSIBILITÉ</p>${settingRow('largeText', 'Aa', 'Texte agrandi', 'Améliore la lisibilité')}${settingRow('highContrast', '◐', 'Contraste renforcé', 'Éclaircit les textes et contours')}${settingRow('cinematicFx', '✺', 'Animations cinématiques', 'Décors vivants, secousses, pluie, glitch et transitions')}${settingRow('reducedMotion', '◌', 'Réduire les animations', 'Limite les mouvements')}</section>
-      <section class="settings-group danger-zone"><p class="settings-label">DONNÉES</p>${ui.game ? '<button class="settings-action danger-text" data-action="delete-save"><span>Supprimer la partie en cours</span><b>›</b></button>' : '<div class="settings-empty">Aucune partie sauvegardée.</div>'}<button class="settings-action" data-action="reset-settings"><span>Réinitialiser les réglages</span><b>›</b></button></section>
+      <section class="settings-group danger-zone"><p class="settings-label">DONNÉES</p>${ui.game ? '<button class="settings-action" data-action="export-report"><span>Exporter le rapport de partie</span><b>⇩</b></button><button class="settings-action danger-text" data-action="delete-save"><span>Supprimer la partie en cours</span><b>›</b></button>' : '<div class="settings-empty">Aucune partie sauvegardée.</div>'}<button class="settings-action" data-action="reset-settings"><span>Réinitialiser les réglages</span><b>›</b></button></section>
       <p class="settings-note">La partie reste enregistrée uniquement dans ce navigateur.</p>
     </main>`;
 }
@@ -761,13 +1028,11 @@ function renderRules() {
 function renderSetup() {
   const nameInputs = Array.from({ length: ui.setup.playerCount }, (_, index) => `<label class="field player-field"><span>Joueur ${index + 1}</span><input data-player-name="${index}" maxlength="18" value="${escapeHtml(ui.setup.names[index] ?? `Joueur ${index + 1}`)}"></label>`).join('');
   const durationCards = setupOptions.durations.map((option) => `<button class="select-card ${ui.setup.duration === option.id ? 'selected' : ''}" data-duration="${option.id}"><strong>${option.label}</strong><span>${option.detail}</span></button>`).join('');
-  const audienceCards = setupOptions.audiences.map((option) => `<button class="select-card ${ui.setup.audience === option.id ? 'selected' : ''}" data-audience="${option.id}"><strong>${option.label}</strong><span>${option.detail}</span></button>`).join('');
   app.innerHTML = `
     <main class="shell">
       <header class="topbar"><button class="icon-button" data-action="open-crash">←</button><div><p class="kicker">NOUVELLE PARTIE</p><h2>Préparer l’équipage</h2></div></header>
       <section class="panel"><div class="section-heading"><div><p class="step">01</p><h3>Combien êtes-vous ?</h3></div><div class="counter"><button data-action="less-player">−</button><strong>${ui.setup.playerCount}</strong><button data-action="more-player">+</button></div></div><div class="player-grid">${nameInputs}</div></section>
       <section class="panel"><div class="section-heading"><div><p class="step">02</p><h3>Durée</h3></div></div><div class="select-grid">${durationCards}</div></section>
-      <section class="panel"><div class="section-heading"><div><p class="step">03</p><h3>Public</h3></div></div><div class="select-grid">${audienceCards}</div></section>
       <button class="button primary sticky-action" data-action="start-game">Distribuer les briefings</button>
     </main>`;
 }
@@ -811,7 +1076,7 @@ function playerCard(player) {
   const visibleStatuses = publicStatuses(player);
   const separated = player.afterlife?.active;
   const stateLabel = separated ? 'Séparé du groupe · agit encore en secret' : (visibleStatuses.length ? visibleStatuses.join(' · ') : 'En état de jouer');
-  return `<article class="player-card ${separated ? 'separated-player' : ''}"><div class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</div><div class="player-main"><strong>${escapeHtml(player.name)}</strong><div class="lives">${'❤️'.repeat(player.lives)}${'🖤'.repeat(3 - player.lives)}</div><small>${escapeHtml(stateLabel)}</small></div><div class="inventory">${player.inventory.length ? player.inventory.map((item) => `<span>${escapeHtml(item)}</span>`).join('') : '<span>Inventaire vide</span>'}</div></article>`;
+  return `<article class="player-card ${separated ? 'separated-player' : ''}"><div class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</div><div class="player-main"><strong>${escapeHtml(player.name)}</strong><div class="lives">${'❤️'.repeat(player.lives)}${'🖤'.repeat(3 - player.lives)}</div><small>${escapeHtml(stateLabel)}</small></div><div class="private-item-count"><span>🔒 ${player.inventory.length} objet${player.inventory.length > 1 ? 's' : ''}</span><small>contenu privé</small></div></article>`;
 }
 function renderGame() {
   const event = currentEvent();
@@ -823,8 +1088,8 @@ function renderGame() {
       <header class="topbar compact"><button class="icon-button" data-action="home">⌂</button><div><p class="kicker">DERNIÈRE ISSUE · LE CRASH</p><h2>Chapitre ${event.chapter} · ${escapeHtml(chapter.title)}</h2></div><button class="icon-button danger-button" data-action="reset">↺</button></header>
       <section class="gauges">${gaugeCard('🥫', 'Réserves', ui.game.gauges.reserves)}${gaugeCard('⛺', 'Refuge', ui.game.gauges.shelter)}${gaugeCard('📡', 'Signal', ui.game.gauges.signal)}${gaugeCard('⚠️', 'Danger', ui.game.gauges.danger)}</section>
       <section class="story-card"><div class="event-number">ÉTAPE ${ui.game.eventIndex + 1}/${ui.game.eventSequence.length}${event.secondary ? ' · IMPRÉVU' : ''}${event.branch ? ' · CHEMIN EXCLUSIF' : ''}</div><p class="kicker">CHAPITRE ${event.chapter} · ${escapeHtml(chapter.title).toUpperCase()}</p><h2>${escapeHtml(event.title)}</h2>${renderParagraphs(getEventNarrative(ui.game, event), 'event-narrative')}${hint}<div class="oral-cue"><span>🗣️</span><p><strong>Cette scène se joue à voix haute.</strong><br>${event.discussionSeconds ? `Vous aurez ${event.discussionSeconds} secondes pour discuter avant les choix.` : 'Lisez la scène, puis passez le téléphone pour les décisions privées.'}</p></div><button class="button primary" data-action="begin-event">${event.discussionSeconds ? 'Lancer la discussion' : 'Faire les choix'}</button></section>
-      <section class="group-bag"><div><p class="step">RESSOURCES COMMUNES</p><div class="inventory common-inventory">${ui.game.groupInventory.length ? ui.game.groupInventory.map((item) => `<span>${escapeHtml(item)}</span>`).join('') : '<span>Aucun objet commun</span>'}</div></div><span class="context-talent-note">✦ Les talents secrets apparaissent au moment utile</span></section>
-      <section><div class="section-heading"><div><p class="step">SURVIVANTS</p><h3>État du groupe</h3></div><span class="cohesion-pill">🤝 Cohésion ${ui.game.gauges.cohesion}</span></div><div class="players-stack">${ui.game.players.map(playerCard).join('')}</div></section>
+      <section class="group-bag"><div><p class="step">RESSOURCES COMMUNES</p><div class="inventory common-inventory">${ui.game.groupInventory.length ? ui.game.groupInventory.map((item) => `<span>${escapeHtml(item)}</span>`).join('') : '<span>Aucun objet commun</span>'}</div></div><div class="group-tools"><span class="context-talent-note">✦ Les talents secrets apparaissent au moment utile</span><button class="button secondary small-button" data-action="private-dossiers">🔒 Dossiers privés</button></div></section>
+      <section><div class="section-heading"><div><p class="step">SURVIVANTS</p><h3>État du groupe</h3></div><span class="cohesion-pill ${cohesionLabel(ui.game.gauges.cohesion).tone}">🤝 ${cohesionLabel(ui.game.gauges.cohesion).label}</span></div><div class="players-stack">${ui.game.players.map(playerCard).join('')}</div></section>
     </main>`;
 }
 
@@ -859,7 +1124,7 @@ function renderPrivateChoice() {
   const event = currentEvent();
   const player = currentPrivatePlayer();
   if (!ui.passReady) {
-    app.innerHTML = `<main class="shell private-shell"><section class="privacy-card"><div class="privacy-icon">🙈</div><p class="kicker">CHOIX SECRET ${ui.privateTurnIndex + 1}/${ui.privateOrder.length}</p><h2>Passe le téléphone à<br><span>${escapeHtml(player.name)}</span></h2><p>Les autres joueurs ne doivent pas voir son choix.</p><button class="button primary" data-action="ready-private">Je suis ${escapeHtml(player.name)}</button></section></main>`;
+    app.innerHTML = `<main class="shell private-shell"><section class="privacy-card"><div class="privacy-icon">🙈</div><p class="kicker">CHOIX SECRET ${ui.privateTurnIndex + 1}/${ui.privateOrder.length}</p><h2>Passe le téléphone à<br><span>${escapeHtml(player.name)}</span></h2><p>Les autres joueurs ne doivent pas voir son choix ni son inventaire personnel.</p><button class="button primary" data-action="ready-private">Je suis ${escapeHtml(player.name)}</button></section></main>`;
     return;
   }
 
@@ -867,31 +1132,58 @@ function renderPrivateChoice() {
   if (ui.pendingChoice) {
     const pending = available.find((choice) => choice.id === ui.pendingChoice);
     const targets = getActivePlayers(ui.game).filter((target) => target.id !== player.id).map((target) => `<button class="target-card" data-target-player="${target.id}"><span class="player-avatar">${escapeHtml(target.name.slice(0, 1).toUpperCase())}</span><strong>${escapeHtml(target.name)}</strong><span>›</span></button>`).join('');
-    app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">CHOIX DE ${escapeHtml(player.name).toUpperCase()}</p><h2>${escapeHtml(pending.targetLabel ?? 'Choisis une personne')}</h2><p>Cette sélection restera secrète jusqu’à la résolution.</p></header><div class="target-stack">${targets}</div><button class="button secondary" data-action="cancel-target">Retour aux choix</button></main>`;
+    app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">CHOIX DE ${escapeHtml(player.name).toUpperCase()}</p><h2>${escapeHtml(pending.targetLabel ?? 'Choisis une personne')}</h2><p>Cette sélection restera secrète jusqu’à sa découverte éventuelle.</p></header>${privateInventoryMarkup(player, true)}<div class="target-stack">${targets}</div><button class="button secondary" data-action="cancel-target">Retour aux choix</button></main>`;
     return;
   }
 
-  const cards = available.map((choice) => `<button class="choice-card" data-choice="${choice.id}" data-needs-target="${choice.requiresTarget ? 'true' : 'false'}"><span class="choice-icon">${choice.icon}</span><span class="choice-copy"><strong>${escapeHtml(choice.label)}</strong><small>${escapeHtml(choice.description)}</small></span><span class="choice-arrow">›</span></button>`).join('');
-  app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">CHAPITRE ${event.chapter} · CHOIX SECRET</p><h2>${escapeHtml(player.name)}, à toi.</h2><p>${escapeHtml(event.prompt)}</p></header>${countdownMarkup(event.decisionSeconds ?? 20, 'Temps pour choisir')}<div class="choice-stack">${cards}</div><p class="privacy-hint">🔒 Ton choix sera caché pendant la résolution. À zéro, l’inaction aura une conséquence.</p></main>`;
+  const cards = available.map((choice) => `<button class="choice-card ${choiceNeedsConfirmation(choice) ? 'grave-choice' : ''}" data-choice="${choice.id}" data-needs-target="${choice.requiresTarget ? 'true' : 'false'}"><span class="choice-icon">${choice.icon}</span><span class="choice-copy"><strong>${escapeHtml(choice.label)}</strong><small>${escapeHtml(choice.description)}</small></span><span class="choice-arrow">›</span></button>`).join('');
+  app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">CHAPITRE ${event.chapter} · CHOIX SECRET</p><h2>${escapeHtml(player.name)}, à toi.</h2><p>${escapeHtml(event.prompt)}</p></header>${countdownMarkup(event.decisionSeconds ?? 20, 'Temps pour choisir')}${privateInventoryMarkup(player, true)}<div class="choice-stack">${cards}</div><p class="privacy-hint">🔒 Ton choix sera masqué avant de rendre le téléphone. Les décisions graves demandent une confirmation.</p></main>`;
+}
+
+function renderPrivateMask() {
+  const player = currentPrivatePlayer();
+  app.innerHTML = `<main class="shell private-shell"><section class="privacy-card mask-card"><div class="privacy-icon">✓</div><p class="kicker">CHOIX ENREGISTRÉ</p><h2>${escapeHtml(player.name)}, masque maintenant l’écran.</h2><p>Pose le téléphone face cachée ou vérifie que personne ne peut lire avant de continuer.</p><button class="button primary" data-action="private-mask-continue">L’écran est masqué</button></section></main>`;
 }
 
 function renderGroupChoice() {
   const event = currentEvent();
   const available = getAvailableChoices(ui.game, event);
-  if (!available.length) {
-    ui.selectedGroupChoice = 'stay';
-  }
-  const cards = available.map((choice) => `<button class="choice-card ${ui.selectedGroupChoice === choice.id ? 'selected' : ''}" data-group-choice="${choice.id}"><span class="choice-icon">${choice.icon}</span><span class="choice-copy"><strong>${escapeHtml(choice.label)}</strong><small>${escapeHtml(choice.description)}</small></span><span class="choice-check">${ui.selectedGroupChoice === choice.id ? '✓' : ''}</span></button>`).join('');
+  if (!available.length) ui.selectedGroupChoice = 'stay';
+  const cards = available.map((choice) => `<button class="choice-card ${ui.selectedGroupChoice === choice.id ? 'selected' : ''} ${choiceNeedsConfirmation(choice) ? 'grave-choice' : ''}" data-group-choice="${choice.id}"><span class="choice-icon">${choice.icon}</span><span class="choice-copy"><strong>${escapeHtml(choice.label)}</strong><small>${escapeHtml(choice.description)}</small></span><span class="choice-check">${ui.selectedGroupChoice === choice.id ? '✓' : ''}</span></button>`).join('');
   const selected = available.find((choice) => choice.id === ui.selectedGroupChoice);
   const actorSelect = selected?.requiresActor ? `<label class="field volunteer-field"><span>${escapeHtml(selected.actorLabel ?? 'Qui agit ?')}</span><select data-actor>${getActivePlayers(ui.game).map((player) => `<option value="${player.id}" ${ui.actorId === player.id ? 'selected' : ''}>${escapeHtml(player.name)}</option>`).join('')}</select></label>` : '';
   app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">CHAPITRE ${event.chapter} · DÉCISION DU GROUPE</p><h2>${escapeHtml(event.title)}</h2><p>${escapeHtml(event.prompt)}</p></header>${countdownMarkup(event.decisionSeconds ?? 25, 'Temps pour valider')}<div class="choice-stack">${cards}</div>${actorSelect}<button class="button primary sticky-action" data-action="confirm-group" ${ui.selectedGroupChoice ? '' : 'disabled'}>Valider la décision</button></main>`;
 }
 
+function renderChoiceConfirmation() {
+  const choice = ui.confirmation;
+  if (!choice) return setScreen(ui.confirmationReturnScreen ?? 'game');
+  const target = choice.targetId ? ui.game.players.find((player) => player.id === choice.targetId) : null;
+  app.innerHTML = `<main class="shell private-shell"><section class="privacy-card confirmation-card"><div class="privacy-icon">!</div><p class="kicker">DÉCISION IRRÉVERSIBLE</p><h2>Confirmer « ${escapeHtml(choice.label)} » ?</h2><p>${escapeHtml(choice.description)}</p>${target ? `<div class="confirmation-target">Cette décision vise <strong>${escapeHtml(target.name)}</strong>.</div>` : ''}<div class="confirmation-warning">Elle peut retirer une vie, abandonner quelqu’un, détruire une ressource ou modifier définitivement votre chemin.</div><button class="button danger-solid" data-action="confirm-dangerous-choice">Oui, confirmer</button><button class="button secondary" data-action="cancel-dangerous-choice">Revenir au choix</button></section></main>`;
+}
+
 function renderResult() {
-  const summary = ui.result.summary.map((line) => `<li>${escapeHtml(line)}</li>`).join('');
-  const narrative = getResultNarrative(ui.game, ui.result);
+  const publicSummary = getPublicResultSummary(ui.result);
+  const summary = publicSummary.map((line) => `<li>${escapeHtml(line)}</li>`).join('');
+  const narrative = getPublicResultNarrative(ui.result);
+  const cohesion = cohesionLabel(ui.game.gauges.cohesion);
   const nextText = ui.game.complete ? 'Découvrir votre issue' : ui.game.chapterTransition ? `Terminer le chapitre ${ui.result.chapter ?? ''}` : 'Continuer';
-  app.innerHTML = `<main class="shell result-shell"><section class="result-card"><div class="result-icon">✦</div><p class="kicker">CONSÉQUENCES</p><h2>${escapeHtml(ui.result.title)}</h2>${renderParagraphs(narrative, 'result-narrative')}<div class="mechanical-impact"><strong>Ce que cela change</strong><ul>${summary}</ul></div>${ui.result.timedOut ? '<div class="timeout-result"><strong>⏳ Le temps a expiré.</strong><p>L’inaction a déclenché une conséquence propre à cette scène.</p></div>' : ''}${ui.result.secret ? '<div class="secret-result"><strong>Une partie de cette conséquence reste secrète.</strong><p>La vérité pourra apparaître plus tard dans l’aventure ou dans le bilan final.</p></div>' : ''}<div class="mini-gauges"><span>🥫 ${ui.game.gauges.reserves}/5</span><span>⛺ ${ui.game.gauges.shelter}/5</span><span>📡 ${ui.game.gauges.signal}/5</span><span>⚠️ ${ui.game.gauges.danger}/5</span><span>🤝 ${ui.game.gauges.cohesion}</span></div><button class="button primary" data-action="continue">${escapeHtml(nextText)}</button></section></main>`;
+  app.innerHTML = `<main class="shell result-shell"><section class="result-card"><div class="result-icon">✦</div><p class="kicker">CONSÉQUENCES</p><h2>${escapeHtml(ui.result.title)}</h2>${renderParagraphs(narrative, 'result-narrative')}<div class="mechanical-impact"><strong>Ce que le groupe peut constater</strong><ul>${summary}</ul></div>${ui.result.timedOut ? '<div class="timeout-result"><strong>⏳ Le temps a expiré.</strong><p>L’inaction a déclenché une conséquence propre à cette scène.</p></div>' : ''}${ui.result.secret ? '<div class="secret-result"><strong>Tout n’est pas encore visible.</strong><p>Les actions privées ne sont révélées que lorsqu’un indice, une victime ou le bilan final les expose.</p></div>' : ''}<div class="mini-gauges"><span>🥫 ${ui.game.gauges.reserves}/5</span><span>⛺ ${ui.game.gauges.shelter}/5</span><span>📡 ${ui.game.gauges.signal}/5</span><span>⚠️ ${ui.game.gauges.danger}/5</span><span class="cohesion-${cohesion.tone}">🤝 ${escapeHtml(cohesion.label)}</span></div><button class="button primary" data-action="continue">${escapeHtml(nextText)}</button></section></main>`;
+}
+
+function renderDossierSelect() {
+  const cards = ui.game.players.map((player) => `<button class="target-card dossier-target" data-dossier-player="${player.id}"><span class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</span><span><strong>${escapeHtml(player.name)}</strong><small>Consulter son inventaire, son talent et ses rappels secrets</small></span><b>›</b></button>`).join('');
+  app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">DOSSIERS PRIVÉS</p><h2>Qui souhaite consulter son dossier ?</h2><p>Choisissez un prénom, puis passez le téléphone. Le contenu suivant est strictement privé.</p></header><div class="target-stack">${cards}</div><button class="button secondary" data-action="close-dossiers">Retour au jeu</button></main>`;
+}
+
+function renderPrivateDossier() {
+  const player = ui.game.players.find((item) => item.id === ui.dossierPlayerId) ?? ui.game.players[0];
+  if (!ui.dossierReady) {
+    app.innerHTML = `<main class="shell private-shell"><section class="privacy-card"><div class="privacy-icon">🔒</div><p class="kicker">DOSSIER PERSONNEL</p><h2>Passe le téléphone à<br><span>${escapeHtml(player.name)}</span></h2><p>Les autres joueurs doivent détourner les yeux.</p><button class="button primary" data-action="dossier-ready">Je suis ${escapeHtml(player.name)}</button></section></main>`;
+    return;
+  }
+  const afterlife = player.afterlife?.active ? `<div class="role-card"><small>PARCOURS SÉPARÉ</small><strong>${escapeHtml(player.afterlife.title)}</strong><p>${escapeHtml(player.afterlife.briefing)}</p></div>` : '';
+  app.innerHTML = `<main class="shell private-shell"><section class="briefing-card dossier-card"><p class="kicker">DOSSIER DE ${escapeHtml(player.name).toUpperCase()}</p><div class="briefing-symbol">${player.ability.icon}</div><h2>${escapeHtml(player.ability.title)}</h2><p>${escapeHtml(player.ability.description)}</p><div class="role-card ${player.role.id === 'saboteur' ? 'danger-role' : ''}"><small>OBJECTIF PERSONNEL</small><strong>${escapeHtml(player.role.title)}</strong><p>${escapeHtml(player.role.briefing)}</p></div>${afterlife}${privateInventoryMarkup(player)}<button class="button primary" data-action="dossier-mask">Masquer mon dossier</button></section></main>`;
 }
 
 function renderTalentPrompt() {
@@ -971,7 +1263,7 @@ function renderEnding() {
       ${(betrayalReveal || brokenPromises) ? `<section class="betrayal-panel"><p class="step">PROMESSES ET TRAHISONS RÉVÉLÉES</p>${brokenPromises ? `<h3>Promesses brisées</h3><ul>${brokenPromises}</ul>` : ''}${betrayalReveal ? `<h3>Actions contre les autres</h3><ul>${betrayalReveal}</ul>` : ''}</section>` : ''}
       <section class="truth-panel"><p class="step">CE QUI S’EST RÉELLEMENT PASSÉ</p><h2>${escapeHtml(ui.game.plot.id === 'accident' ? 'Il n’y avait aucun traître.' : ui.game.plot.id === 'saboteur' ? 'Un saboteur se trouvait parmi vous.' : 'Une personne avait un objectif caché.')}</h2><p>${escapeHtml(ending.truth)}</p></section>
       <section><div class="section-heading"><div><p class="step">RÉVÉLATION</p><h3>Rôles, talents et parcours séparés</h3></div></div><div class="reveal-list">${roleReveal}</div></section>
-      <section class="ending-actions"><button class="button primary" data-action="replay">Rejouer avec le même groupe</button><button class="button secondary" data-action="finish-home">Retour aux aventures</button></section>
+      <section class="ending-actions"><button class="button primary" data-action="replay">Rejouer avec le même groupe</button><button class="button secondary" data-action="export-report">Exporter le rapport complet</button><button class="button secondary" data-action="finish-home">Retour aux aventures</button></section>
     </main>`;
 }
 
@@ -993,7 +1285,11 @@ function render() {
   if (ui.screen === 'game') renderGame();
   if (ui.screen === 'discussion') renderDiscussion();
   if (ui.screen === 'privateChoice') renderPrivateChoice();
+  if (ui.screen === 'privateMask') renderPrivateMask();
   if (ui.screen === 'groupChoice') renderGroupChoice();
+  if (ui.screen === 'confirmChoice') renderChoiceConfirmation();
+  if (ui.screen === 'dossierSelect') renderDossierSelect();
+  if (ui.screen === 'privateDossier') renderPrivateDossier();
   if (ui.screen === 'result') renderResult();
   if (ui.screen === 'talentPrompt') renderTalentPrompt();
   if (ui.screen === 'afterlifePrompt') renderAfterlifePrompt();
@@ -1001,6 +1297,7 @@ function render() {
   applyVisualTheme();
   audioDirector.sync({ screen: ui.screen, game: ui.game, event: currentEvent(), settings: ui.settings });
   audioDirector.cueScene({ screen: ui.screen, game: ui.game, event: currentEvent(), result: ui.result });
+  persistUiSession();
   renderAudioControl();
 }
 
@@ -1063,9 +1360,21 @@ app.addEventListener('click', (event) => {
   if (action === 'ready-private') {
     audioDirector.play('reveal', 0.5);
     ui.passReady = true;
+    const shouldResume = ui.timerPaused && ui.timerRemaining != null;
     render();
-    startCountdown(currentEvent()?.decisionSeconds ?? 20, 'private-decision', submitPrivateTimeout);
+    if (shouldResume) resumeCountdown();
+    else startCountdown(currentEvent()?.decisionSeconds ?? 20, 'private-decision', submitPrivateTimeout);
   }
+  if (action === 'private-mask-continue') continueAfterPrivateMask();
+  if (action === 'pause-timer') pauseCountdown();
+  if (action === 'resume-timer') resumeCountdown();
+  if (action === 'confirm-dangerous-choice') confirmChoiceSubmission();
+  if (action === 'cancel-dangerous-choice') cancelChoiceConfirmation();
+  if (action === 'private-dossiers') { ui.dossierReturnScreen = ui.screen; ui.dossierReady = false; setScreen('dossierSelect'); }
+  if (action === 'close-dossiers') setScreen(ui.dossierReturnScreen ?? 'game');
+  if (action === 'dossier-ready') { ui.dossierReady = true; render(); }
+  if (action === 'dossier-mask') { ui.dossierReady = false; setScreen('dossierSelect'); }
+  if (action === 'export-report') exportGameReport();
   if (action === 'start-choice-phase') startChoicePhase();
   if (action === 'add-promise') addDiscussionPromise();
   if (action === 'cancel-target') {
@@ -1089,7 +1398,7 @@ app.addEventListener('click', (event) => {
   if (action === 'finish-home') setScreen('home');
   if (action === 'reset' && (!ui.settings.confirmRestart || confirm('Recommencer cette partie depuis le début ?'))) resetRun();
   if (action === 'delete-save' && confirm('Supprimer définitivement la partie en cours ?')) {
-    clearGame(); ui.game = null; render();
+    clearGame(); clearSessionState(); ui.game = null; render();
   }
   if (action === 'reset-settings' && confirm('Réinitialiser tous les réglages ?')) {
     ui.settings = resetSettings(); applySettings(); render();
@@ -1097,12 +1406,13 @@ app.addEventListener('click', (event) => {
 
   if (target.dataset.setting) toggleSetting(target.dataset.setting);
   if (target.dataset.duration) { ui.setup.duration = target.dataset.duration; render(); }
-  if (target.dataset.audience) { ui.setup.audience = target.dataset.audience; render(); }
 
   if (target.dataset.removePromise !== undefined) {
     ui.discussionPromises.splice(Number(target.dataset.removePromise), 1);
     render();
   }
+
+  if (target.dataset.dossierPlayer) { ui.dossierPlayerId = target.dataset.dossierPlayer; ui.dossierReady = false; setScreen('privateDossier'); }
 
   if (target.dataset.choice) {
     audioDirector.play('select', 0.42);
@@ -1110,9 +1420,15 @@ app.addEventListener('click', (event) => {
     if (choice?.requiresTarget) {
       ui.pendingChoice = choice.id;
       render();
-    } else submitPrivateChoice(target.dataset.choice);
+    } else if (choiceNeedsConfirmation(choice)) requestChoiceConfirmation('private', choice);
+    else submitPrivateChoice(target.dataset.choice);
   }
-  if (target.dataset.targetPlayer) { audioDirector.play('select', 0.42); submitPrivateChoice(ui.pendingChoice, target.dataset.targetPlayer); }
+  if (target.dataset.targetPlayer) {
+    audioDirector.play('select', 0.42);
+    const choice = getAvailableChoices(ui.game, currentEvent(), currentPrivatePlayer().id).find((item) => item.id === ui.pendingChoice);
+    if (choiceNeedsConfirmation(choice)) requestChoiceConfirmation('private', choice, target.dataset.targetPlayer);
+    else submitPrivateChoice(ui.pendingChoice, target.dataset.targetPlayer);
+  }
   if (target.dataset.afterlifeAction) useAfterlifeAction(target.dataset.afterlifeAction);
   if (target.dataset.groupChoice) {
     audioDirector.play('select', 0.42);
@@ -1147,5 +1463,23 @@ app.addEventListener('change', (event) => {
   if (event.target.matches('[data-promise-type]')) ui.promiseDraft.promiseId = event.target.value;
   if (event.target.matches('[data-promise-target]')) ui.promiseDraft.targetId = event.target.value;
 });
+
+
+restoreUiSessionIfPossible();
+if (window.history?.replaceState) window.history.replaceState({ derniereIssue: true, screen: ui.screen }, '');
+window.addEventListener?.('popstate', () => {
+  clearCountdown();
+  if (ui.screen === 'home') {
+    window.history?.pushState?.({ derniereIssue: true, screen: 'home' }, '');
+    render();
+    return;
+  }
+  const safeScreen = ui.game ? (ui.game.complete ? 'ending' : 'game') : 'home';
+  setScreen(safeScreen, { replaceHistory: true });
+});
+
+if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
+}
 
 render();

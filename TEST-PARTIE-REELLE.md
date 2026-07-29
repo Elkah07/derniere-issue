@@ -1,29 +1,28 @@
-# Test de partie réelle V0.8
+# Grille de playtest V0.8.1
 
-Les tests automatiques sont terminés. Ce protocole sert à noter le ressenti pendant une vraie soirée.
+## Partie
+- Nombre de joueurs :
+- Durée choisie :
+- Durée réelle :
+- Appareil / navigateur :
+- Fin obtenue :
 
-## Duo
+## À noter pendant la partie
+- scène trop longue ou peu claire
+- chrono trop court ou trop long
+- choix dont la conséquence paraît injuste
+- secret révélé trop tôt
+- objet personnel difficile à retrouver
+- confirmation trop fréquente ou absente
+- retour / actualisation mal géré
+- son gênant ou manquant
+- moment où la discussion orale fonctionne particulièrement bien
 
-- Le passage du téléphone reste-t-il fluide ?
-- Les fenêtres de talent paraissent-elles trop fréquentes ?
-- Les choix oraux donnent-ils réellement envie de discuter ?
-- Une personne à zéro vie comprend-elle immédiatement son nouveau parcours ?
-- Le son reste-t-il discret pendant 30 à 45 minutes ?
+## Après la partie
+- Les joueurs ont-ils compris qu’ils pouvaient mentir ?
+- Les embranchements ont-ils semblé réels ?
+- Les trahisons ont-elles eu un impact compréhensible ?
+- Les joueurs à zéro vie sont-ils restés impliqués ?
+- Le bilan final explique-t-il correctement l’histoire ?
 
-## Groupe de 4 joueurs ou plus
-
-- Personne ne devine-t-il qui possède le talent utile ?
-- Le temps passé à vérifier les options secrètes reste-t-il acceptable ?
-- Les joueurs séparés continuent-ils à se sentir impliqués ?
-- Les promesses et trahisons sont-elles comprises lors de leur révélation ?
-- Les effets ponctuels correspondent-ils aux scènes racontées ?
-
-## Informations à noter
-
-- durée totale ;
-- événement le plus marquant ;
-- événement le plus lent ;
-- son gênant ou trop fort ;
-- choix confus ;
-- bug éventuel ;
-- fin obtenue.
+Le bouton **Exporter le rapport de partie** produit un fichier JSON utile pour accompagner les retours.

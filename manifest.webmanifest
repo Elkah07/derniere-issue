@@ -1,0 +1,15 @@
+{
+  "name": "Dernière Issue",
+  "short_name": "Dernière Issue",
+  "description": "Aventures narratives de survie sociale pour 2 à 8 joueurs.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#061311",
+  "theme_color": "#081b19",
+  "orientation": "portrait-primary",
+  "icons": [
+    {"src":"./assets/icon-192.png","sizes":"192x192","type":"image/png"},
+    {"src":"./assets/icon-512.png","sizes":"512x512","type":"image/png"}
+  ]
+}

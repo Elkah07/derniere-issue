@@ -89,7 +89,7 @@ function healPlayer(player, amount = 1) {
 }
 
 
-const HIDDEN_PUBLIC_STATUSES = new Set(['Protégé', 'Endurant', 'Chance']);
+const HIDDEN_PUBLIC_STATUSES = new Set(['Protégé', 'Endurant', 'Chance', 'Contaminé']);
 
 const TALENT_CONTEXTS = {
   doctor: new Set(['save_nora', 'camp_tasks', 'rations', 'storm', 'jungle_ambush', 'ravine', 'outpost', 'medical_protocol', 'trapped', 'last_wave', 'bonus_fever', 'bonus_fire', 'bonus_current']),
@@ -912,7 +912,7 @@ export function resolveEvent(game, eventId, choices = {}, extra = {}) {
       }
     });
   }
-  const result = { eventId, chapter: event.chapter, title: event.title, summary: [], secret: false, timedOut: groupTimedOut || timedOutIds.length > 0 };
+  const result = { eventId, chapter: event.chapter, title: event.title, summary: [], publicSummary: null, secret: false, timedOut: groupTimedOut || timedOutIds.length > 0 };
   const ids = Object.values(choices).map(choiceId);
   const actor = next.players.find((player) => player.id === (extra.actorId ?? extra.volunteerId));
 
@@ -1068,6 +1068,7 @@ export function resolveEvent(game, eventId, choices = {}, extra = {}) {
       });
       if (attacks.length) {
         result.secret = true;
+        result.publicSummary = shares ? ['La source rapporte de l’eau au groupe. Tout le monde ne révèle pas ce qu’il en a fait.'] : ['La source est explorée, mais aucun bilan fiable ne peut être établi.'];
         result.summary.push('Au moins une gourde a été sabotée sans que la victime ne le sache.');
       }
       break;
@@ -1100,6 +1101,7 @@ export function resolveEvent(game, eventId, choices = {}, extra = {}) {
       const decision = choiceId(choices[playerId] ?? Object.values(choices)[0]);
       next.flags.briefcaseOwner = finder.id;
       result.secret = decision !== 'show';
+      if (result.secret) result.publicSummary = ['La personne qui a fait la découverte ne montre pas clairement ce qu’elle a trouvé.'];
       if (decision === 'show') {
         next.flags.briefcaseState = 'shared';
         addGroupItem(next, 'Mallette grise');
@@ -1269,6 +1271,7 @@ export function resolveEvent(game, eventId, choices = {}, extra = {}) {
       });
       if (stealers.length || liars.length) {
         result.secret = stealers.length > 0;
+        if (result.secret) result.publicSummary = ['L’expédition revient divisée. Certains objets et certaines versions ne correspondent plus.'];
         result.summary.push('La séparation a été utilisée pour trahir une ou plusieurs personnes.');
       }
       break;
@@ -1286,12 +1289,14 @@ export function resolveEvent(game, eventId, choices = {}, extra = {}) {
         scout.secrets.push('Tu connais seul un tunnel vers la station.');
         addPersonalItem(scout, 'Plan du tunnel');
         result.secret = true;
+        result.publicSummary = ['L’éclaireur revient sans annoncer de nouveau passage.'];
         result.summary.push('L’éclaireur revient sans révéler la route secrète.');
       } else {
         addGauge(next, 'danger', 2);
         addGauge(next, 'cohesion', -1);
         scout.secrets.push('Tu as volontairement condamné le tunnel.');
         result.secret = true;
+        result.publicSummary = ['Le tunnel s’effondre brutalement. La cause exacte reste inconnue.', 'Danger +2.'];
         result.summary.push('Le tunnel s’effondre. Danger +2.');
       }
       break;
@@ -1428,6 +1433,7 @@ export function resolveEvent(game, eventId, choices = {}, extra = {}) {
         next.flags.mapFalsified = true;
         recordBetrayal(next, accused.id, null, 'Carte falsifiée par vengeance', eventId, false);
         result.secret = true;
+        result.publicSummary = ['La carte est remise au groupe. Sa fiabilité ne peut pas encore être vérifiée.'];
         result.summary.push('La carte rendue au groupe contient une fausse route : Danger +2.');
       }
       break;
@@ -1448,6 +1454,7 @@ export function resolveEvent(game, eventId, choices = {}, extra = {}) {
         addStatus(next.players.find((player) => player.id === victimId), 'Soupçonné');
         recordBetrayal(next, saboteur.id, victimId, 'Preuve fabriquée', eventId, false);
         result.secret = true;
+        result.publicSummary = ['Un nouvel indice apparaît, mais son origine reste impossible à confirmer.'];
         result.summary.push('Une fausse preuve est placée dans un sac.');
       } else {
         addGauge(next, 'signal', -2);
@@ -1564,6 +1571,7 @@ export function resolveEvent(game, eventId, choices = {}, extra = {}) {
       if (reservers.length) result.summary.push(`${reservers.length} place${reservers.length > 1 ? 's sont réservées' : ' est réservée'} en secret.`);
       if (sabotages.length) {
         result.secret = true;
+        result.publicSummary = ['Le comptage des places reste incertain jusqu’au départ.'];
         result.summary.push('Un siège a été rendu inutilisable.');
       }
       break;
@@ -1605,6 +1613,7 @@ export function resolveEvent(game, eventId, choices = {}, extra = {}) {
         addPersonalItem(holder, 'Preuve du crash');
         holder.secrets.push(truthText(next));
         result.secret = true;
+        result.publicSummary = ['Le terminal est refermé avant que le groupe puisse lire le dossier.'];
         result.summary.push('Le terminal est refermé avant que le groupe puisse lire le dossier.');
       } else {
         next.flags.evidenceState = 'destroyed';

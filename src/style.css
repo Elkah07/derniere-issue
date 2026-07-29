@@ -1742,3 +1742,86 @@ body.scene-evac .countdown {
     text-align: left;
   }
 }
+
+/* V0.8.1 · confidentialité, sécurité des choix et pré-test */
+.private-item-count {
+  min-width: 118px;
+  display: grid;
+  gap: 3px;
+  justify-items: end;
+  color: var(--sand);
+}
+.private-item-count span {
+  padding: 7px 10px;
+  border: 1px solid rgba(241, 231, 201, .16);
+  border-radius: 999px;
+  background: rgba(241, 231, 201, .06);
+  font-size: .7rem;
+  font-weight: 800;
+}
+.private-item-count small { color: var(--muted); font-size: .6rem; }
+.group-tools { display: grid; justify-items: end; gap: 9px; }
+.private-inventory {
+  margin: 14px 0 18px;
+  padding: 16px;
+  border: 1px solid rgba(199, 239, 90, .18);
+  border-radius: 18px;
+  background: rgba(199, 239, 90, .055);
+}
+.private-inventory.compact { margin-top: 0; }
+.private-inventory .inventory { margin-top: 8px; }
+.private-inventory details { margin-top: 13px; color: var(--muted); }
+.private-inventory summary { cursor: pointer; color: var(--sand); font-weight: 800; }
+.private-inventory li { margin: 7px 0; line-height: 1.45; }
+.dossier-card { width: 100%; }
+.dossier-target { grid-template-columns: auto 1fr auto; }
+.dossier-target span:nth-child(2) { text-align: left; }
+.dossier-target small { display: block; margin-top: 4px; color: var(--muted); font-size: .66rem; }
+.mask-card { text-align: center; }
+.mask-card .privacy-icon { margin-inline: auto; }
+.confirmation-card { text-align: center; border-color: rgba(255, 120, 95, .4); }
+.confirmation-card .privacy-icon { margin-inline: auto; color: #2b100b; background: var(--danger); }
+.confirmation-target,
+.confirmation-warning {
+  margin: 14px 0;
+  padding: 13px 15px;
+  border-radius: 14px;
+  line-height: 1.45;
+}
+.confirmation-target { background: rgba(199, 239, 90, .07); border: 1px solid rgba(199, 239, 90, .18); }
+.confirmation-warning { color: #ffd6ce; background: rgba(255, 120, 95, .08); border: 1px solid rgba(255, 120, 95, .24); }
+.danger-solid { color: #2b100b; background: var(--danger); border-color: transparent; }
+.grave-choice { border-color: rgba(255, 120, 95, .3); }
+.grave-choice::after {
+  content: 'CONFIRMATION';
+  position: absolute;
+  right: 14px;
+  top: 10px;
+  color: #ffb1a1;
+  font-size: .48rem;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+.timer-control {
+  align-self: center;
+  min-width: 96px;
+  padding: 9px 11px;
+  color: var(--sand);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(255,255,255,.055);
+  cursor: pointer;
+}
+.countdown.paused { border-color: rgba(241, 231, 201, .3); }
+.countdown.paused .countdown-track i { opacity: .55; }
+.cohesion-pill.strong, .cohesion-strong { color: #d9ff75; }
+.cohesion-pill.stable, .cohesion-stable { color: #bfecc9; }
+.cohesion-pill.fragile, .cohesion-fragile { color: #f1e7c9; }
+.cohesion-pill.tense, .cohesion-tense { color: #ffb886; }
+.cohesion-pill.broken, .cohesion-broken { color: #ff8b75; }
+
+@media (max-width: 620px) {
+  .private-item-count { min-width: auto; justify-items: start; grid-column: 2 / -1; }
+  .group-tools { justify-items: stretch; }
+  .timer-control { grid-column: 1 / -1; width: 100%; }
+}
