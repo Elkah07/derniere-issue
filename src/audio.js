@@ -24,19 +24,28 @@ const EVENT_CUES = {
   shelter_fuselage_aftershock: 'collapse',
   shelter_jungle_source: 'jungleCue',
   radio_voice: 'radioMessage',
+  expedition: 'jungleCue',
   ravine: 'stone',
   outpost: 'powerUp',
-  sabotage_clues: 'radioCut',
+  clues: 'radioCut',
   storm: 'thunderShort',
   generator: 'generator',
   black_dossier: 'data',
-  trapped_person: 'explosion',
+  trapped: 'collapse',
   escape_route: 'alarm',
+  final_choice: 'alarm',
   last_wave: 'waveImpact',
-  bonus_fire: 'fireBurst',
-  bonus_current: 'splash',
+  jungle_ambush: 'jungleCue',
+  split_cache: 'stone',
+  scout_route: 'jungleCue',
+  saboteur_cornered: 'radioCut',
+  beacon_reply: 'radioMessage',
+  boat_capacity: 'metal',
+  medical_protocol: 'powerUp',
+  bonus_rain: 'rainCue',
+  bonus_flare: 'flare',
   bonus_call: 'radioMessage',
-  bonus_silence: 'powerDown',
+  bonus_fire: 'fireBurst',
 };
 
 export function selectEventCue(eventId) {
@@ -53,7 +62,7 @@ function campTheme(game) {
 
 export function selectAudioTheme({ screen, game, event } = {}) {
   if (['home', 'adventure', 'settings', 'rules', 'setup'].includes(screen)) return 'menu';
-  if (['briefing', 'privateChoice', 'abilitySelect', 'abilityPrivate'].includes(screen)) return 'secrets';
+  if (['briefing', 'privateChoice', 'talentPrompt', 'afterlifePrompt'].includes(screen)) return 'secrets';
   if (screen === 'ending') {
     const hopeful = new Set(['everyone_home', 'duo_together', 'those_who_stay']);
     return hopeful.has(game?.ending?.id) ? 'endingHope' : 'endingDark';
@@ -108,7 +117,7 @@ export class AudioDirector {
     this.pendingTheme = null;
     this.nodes = [];
     this.timers = [];
-    this.settings = { sound: true, ambience: true, sfx: true, volume: 65 };
+    this.settings = { sound: true, ambience: true, sfx: true, volume: 42 };
     this.lastSync = null;
     this.lastCueKey = null;
     this.pendingCue = null;
@@ -127,11 +136,11 @@ export class AudioDirector {
     this.settings = { ...this.settings, ...settings };
     if (!this.context) return;
     const now = this.context.currentTime;
-    const volume = Math.max(0, Math.min(1, Number(this.settings.volume ?? 65) / 100));
+    const volume = Math.max(0, Math.min(1, Number(this.settings.volume ?? 42) / 100));
     this.masterGain.gain.cancelScheduledValues(now);
     this.masterGain.gain.linearRampToValueAtTime(this.settings.sound ? volume : 0, now + 0.18);
-    this.ambienceGain.gain.linearRampToValueAtTime(this.settings.ambience === false ? 0 : 0.28, now + 0.18);
-    this.sfxGain.gain.linearRampToValueAtTime(this.settings.sfx === false ? 0 : 0.68, now + 0.18);
+    this.ambienceGain.gain.linearRampToValueAtTime(this.settings.ambience === false ? 0 : 0.14, now + 0.18);
+    this.sfxGain.gain.linearRampToValueAtTime(this.settings.sfx === false ? 0 : 0.52, now + 0.18);
     if (!this.settings.sound || this.settings.ambience === false) this.fadeTheme(0.2);
     else if (this.lastSync) this.sync(this.lastSync);
   }
@@ -157,9 +166,9 @@ export class AudioDirector {
     this.masterGain = context.createGain();
     this.ambienceGain = context.createGain();
     this.sfxGain = context.createGain();
-    this.masterGain.gain.value = Math.max(0, Math.min(1, Number(this.settings.volume ?? 65) / 100));
-    this.ambienceGain.gain.value = this.settings.ambience === false ? 0 : 0.28;
-    this.sfxGain.gain.value = this.settings.sfx === false ? 0 : 0.68;
+    this.masterGain.gain.value = Math.max(0, Math.min(1, Number(this.settings.volume ?? 42) / 100));
+    this.ambienceGain.gain.value = this.settings.ambience === false ? 0 : 0.14;
+    this.sfxGain.gain.value = this.settings.sfx === false ? 0 : 0.52;
     this.ambienceGain.connect(this.masterGain);
     this.sfxGain.connect(this.masterGain);
     this.masterGain.connect(context.destination);
@@ -178,10 +187,10 @@ export class AudioDirector {
     this.settings = { ...this.settings, ...settings };
     if (!this.context) return;
     const now = this.context.currentTime;
-    const volume = Math.max(0, Math.min(1, Number(this.settings.volume ?? 65) / 100));
+    const volume = Math.max(0, Math.min(1, Number(this.settings.volume ?? 42) / 100));
     this.masterGain.gain.setTargetAtTime(this.settings.sound ? volume : 0, now, 0.08);
-    this.ambienceGain.gain.setTargetAtTime(this.settings.ambience === false ? 0 : 0.28, now, 0.08);
-    this.sfxGain.gain.setTargetAtTime(this.settings.sfx === false ? 0 : 0.68, now, 0.08);
+    this.ambienceGain.gain.setTargetAtTime(this.settings.ambience === false ? 0 : 0.14, now, 0.08);
+    this.sfxGain.gain.setTargetAtTime(this.settings.sfx === false ? 0 : 0.52, now, 0.08);
   }
 
   getThemeLabel(theme = this.currentTheme ?? this.pendingTheme ?? 'silent') {
@@ -339,7 +348,7 @@ export class AudioDirector {
     if (phase === 'result' && result?.secret) name = 'secret';
     if (!name) return;
 
-    const cue = { name, intensity: phase === 'event' ? 0.68 : 0.55 };
+    const cue = { name, intensity: phase === 'event' ? 0.5 : 0.38 };
     if (!this.context || !this.unlocked) {
       this.pendingCue = cue;
       return;
@@ -385,70 +394,63 @@ export class AudioDirector {
   }
 
   buildMenu() {
-    this.noise({ color: 'brown', gain: 0.012, lowpass: 440, highpass: 35, lfoRate: 0.04, lfoDepth: 0.004 });
+    this.noise({ color: 'brown', gain: 0.004, lowpass: 440, highpass: 35, lfoRate: 0.04, lfoDepth: 0.004 });
   }
 
   buildSecrets() {
-    this.noise({ color: 'brown', gain: 0.008, lowpass: 330, highpass: 55, lfoRate: 0.07, lfoDepth: 0.003 });
+    this.noise({ color: 'brown', gain: 0.003, lowpass: 330, highpass: 55, lfoRate: 0.07, lfoDepth: 0.003 });
   }
 
   buildCrash() {
-    this.noise({ color: 'crackle', gain: 0.028, lowpass: 4200, highpass: 850 });
-    this.noise({ color: 'brown', gain: 0.014, lowpass: 180, highpass: 25, lfoRate: 0.07, lfoDepth: 0.004 });
+    this.noise({ color: 'crackle', gain: 0.008, lowpass: 4200, highpass: 850 });
+    this.noise({ color: 'brown', gain: 0.004, lowpass: 180, highpass: 25, lfoRate: 0.07, lfoDepth: 0.004 });
   }
 
   buildCamp() {
-    this.noise({ color: 'brown', gain: 0.012, lowpass: 650, highpass: 55, lfoRate: 0.05, lfoDepth: 0.004 });
+    this.noise({ color: 'brown', gain: 0.004, lowpass: 650, highpass: 55, lfoRate: 0.05, lfoDepth: 0.004 });
   }
 
   buildBeach() {
-    this.noise({ color: 'white', gain: 0.023, lowpass: 780, highpass: 100, lfoRate: 0.065, lfoDepth: 0.01 });
+    this.noise({ color: 'white', gain: 0.007, lowpass: 780, highpass: 100, lfoRate: 0.065, lfoDepth: 0.01 });
   }
 
   buildFuselage() {
-    this.noise({ color: 'crackle', gain: 0.02, lowpass: 4100, highpass: 800 });
-    this.noise({ color: 'brown', gain: 0.012, lowpass: 260, highpass: 30, lfoRate: 0.05, lfoDepth: 0.004 });
-    this.schedule(24000, () => this.play('metal', 0.26, true), 42000);
+    this.noise({ color: 'crackle', gain: 0.006, lowpass: 4100, highpass: 800 });
+    this.noise({ color: 'brown', gain: 0.004, lowpass: 260, highpass: 30, lfoRate: 0.05, lfoDepth: 0.004 });
   }
 
   buildJungle() {
-    this.noise({ color: 'brown', gain: 0.014, lowpass: 1250, highpass: 75, lfoRate: 0.045, lfoDepth: 0.004 });
-    this.schedule(16000, () => this.chirp({ min: 1500, max: 3100, gain: 0.006, duration: 0.055 }), 32000);
+    this.noise({ color: 'brown', gain: 0.0045, lowpass: 1250, highpass: 75, lfoRate: 0.045, lfoDepth: 0.004 });
   }
 
   buildNight() {
-    this.noise({ color: 'brown', gain: 0.01, lowpass: 720, highpass: 50, lfoRate: 0.035, lfoDepth: 0.003 });
-    this.schedule(18000, () => this.chirp({ min: 2200, max: 4200, duration: 0.04, gain: 0.005 }), 36000);
+    this.noise({ color: 'brown', gain: 0.0035, lowpass: 720, highpass: 50, lfoRate: 0.035, lfoDepth: 0.003 });
   }
 
   buildExploration() {
-    this.noise({ color: 'brown', gain: 0.013, lowpass: 1100, highpass: 80, lfoRate: 0.045, lfoDepth: 0.004 });
-    this.schedule(19000, () => this.chirp({ min: 1100, max: 2500, duration: 0.06, gain: 0.005 }), 39000);
+    this.noise({ color: 'brown', gain: 0.004, lowpass: 1100, highpass: 80, lfoRate: 0.045, lfoDepth: 0.004 });
   }
 
   buildDoubt() {
-    this.noise({ color: 'rain', gain: 0.024, lowpass: 6200, highpass: 420, lfoRate: 0.06, lfoDepth: 0.006 });
-    this.noise({ color: 'brown', gain: 0.012, lowpass: 500, highpass: 45, lfoRate: 0.04, lfoDepth: 0.004 });
-    this.schedule(26000, () => this.thunder(0.025), 52000);
+    this.noise({ color: 'rain', gain: 0.007, lowpass: 6200, highpass: 420, lfoRate: 0.06, lfoDepth: 0.006 });
+    this.noise({ color: 'brown', gain: 0.0035, lowpass: 500, highpass: 45, lfoRate: 0.04, lfoDepth: 0.004 });
   }
 
   buildStation() {
-    this.tone({ frequency: 50, gain: 0.006, type: 'sine' });
-    this.noise({ color: 'white', gain: 0.007, lowpass: 4200, highpass: 1400, lfoRate: 0.08, lfoDepth: 0.002 });
-    this.schedule(28000, () => this.play('radio', 0.2, true), 48000);
+    this.tone({ frequency: 50, gain: 0.0025, type: 'sine' });
+    this.noise({ color: 'white', gain: 0.0025, lowpass: 4200, highpass: 1400, lfoRate: 0.08, lfoDepth: 0.002 });
   }
 
   buildEvacuation() {
-    this.noise({ color: 'rain', gain: 0.0162, lowpass: 7200, highpass: 360, lfoRate: 0.07, lfoDepth: 0.008 });
-    this.noise({ color: 'brown', gain: 0.016, lowpass: 540, highpass: 30, lfoRate: 0.05, lfoDepth: 0.006 });
-    this.schedule(22000, () => this.thunder(0.035), 46000);
+    this.noise({ color: 'rain', gain: 0.006, lowpass: 7200, highpass: 360, lfoRate: 0.07, lfoDepth: 0.008 });
+    this.noise({ color: 'brown', gain: 0.0045, lowpass: 540, highpass: 30, lfoRate: 0.05, lfoDepth: 0.006 });
   }
 
   buildEnding(hopeful) {
     if (hopeful) {
-      this.noise({ color: 'white', gain: 0.012, lowpass: 780, highpass: 90, lfoRate: 0.05, lfoDepth: 0.005 });
+      this.noise({ color: 'white', gain: 0.004, lowpass: 780, highpass: 90, lfoRate: 0.05, lfoDepth: 0.005 });
     } else {
-      this.noise({ color: 'brown', gain: 0.012, lowpass: 360, highpass: 30, lfoRate: 0.04, lfoDepth: 0.004 });
+      this.noise({ color: 'brown', gain: 0.004, lowpass: 360, highpass: 30, lfoRate: 0.04, lfoDepth: 0.004 });
     }
   }
 
@@ -569,8 +571,15 @@ export class AudioDirector {
     if (name === 'data') {
       [620, 760, 910].forEach((frequency, index) => beep({ from: frequency, to: frequency * 1.02, duration: 0.055, gain: 0.012, type: 'square', delay: index * 0.065 }));
     }
+    if (name === 'rainCue') {
+      noiseBurst({ duration: 0.42, gain: 0.018, lowpass: 5200, highpass: 500, color: 'rain' });
+    }
+    if (name === 'flare') {
+      noiseBurst({ duration: 0.14, gain: 0.025, lowpass: 5600, highpass: 900, color: 'white' });
+      beep({ from: 220, to: 980, duration: 0.32, gain: 0.012, type: 'sine', delay: 0.02 });
+    }
     if (name === 'jungleCue') {
-      this.chirp({ min: 900, max: 1800, duration: 0.08, gain: 0.007 });
+      this.chirp({ min: 900, max: 1800, duration: 0.06, gain: 0.004 });
     }
 
     if (name === 'radio') {

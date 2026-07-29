@@ -1,23 +1,34 @@
-# Audio V0.7.1
+# Audio V0.8
 
-Les ambiances restent synthétisées localement dans le navigateur, sans fichier audio externe.
+L’audio utilise Web Audio et fonctionne hors ligne.
 
 ## Principes
 
-- Fonds très discrets, conçus comme une texture et non comme une musique continue.
-- Événements aléatoires espacés pour éviter la répétition.
-- Effets ponctuels synchronisés avec des scènes précises.
-- Contrôles séparés pour l’univers sonore, l’ambiance et les effets.
+- aucune musique envahissante ;
+- fond sonore presque imperceptible ;
+- aucun bruit aléatoire périodique ;
+- silence privilégié entre les événements ;
+- effets courts uniquement lorsqu’une scène le justifie.
 
-## Effets contextuels
+## Effets associés
 
-- Explosion des caisses en flammes
-- Impact initial
-- Métal et effondrement du fuselage
-- Radio et câble sectionné
-- Tempête et tonnerre bref
-- Détonation dans la station
-- Vague finale
-- Alarmes et systèmes électriques
+- impact du crash ;
+- explosion des caisses ;
+- métal et fuselage ;
+- effondrement ;
+- vague et dernière vague ;
+- radio et câble sectionné ;
+- tonnerre ;
+- générateur ;
+- alarme d’évacuation ;
+- fusée de détresse ;
+- feu.
 
-Le moteur ne joue chaque effet de scène qu’une seule fois, même lorsque l’interface est réaffichée.
+## Réglages
+
+- Univers sonore ;
+- Ambiances de fond ;
+- Effets sonores ;
+- Volume général.
+
+Le volume par défaut est fixé à 42 %.

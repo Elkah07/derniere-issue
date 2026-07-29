@@ -24,7 +24,13 @@ test('les fins heureuses et sombres ont des ambiances distinctes', () => {
 test('les scènes fortes déclenchent un effet ponctuel adapté', async () => {
   const { selectEventCue } = await import('../src/audio.js');
   assert.equal(selectEventCue('burning_crates'), 'explosion');
-  assert.equal(selectEventCue('trapped_person'), 'explosion');
+  assert.equal(selectEventCue('trapped'), 'collapse');
   assert.equal(selectEventCue('last_wave'), 'waveImpact');
   assert.equal(selectEventCue('radio_voice'), 'radioMessage');
+});
+
+test('les ambiances ne programment plus de bruits aléatoires répétitifs', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('../src/audio.js', import.meta.url), 'utf8');
+  assert.equal(source.includes('this.schedule('), false);
 });

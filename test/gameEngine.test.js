@@ -95,9 +95,10 @@ test('le volontaire perd une vie en sauvant Nora', () => {
 
 test('une capacité ne peut être utilisée qu’une fois', () => {
   const game = createInitialGame({ names: ['A', 'B'], random: () => 0 });
-  const first = useAbility(game, 'p1', 'p2');
+  game.players[0].ability = { id: 'lucky', title: 'Chanceux', icon: '🍀', description: 'Annule une conséquence personnelle.', used: false, promptedEvents: [] };
+  const first = useAbility(game, 'p1', 'p1', 'impact_escape');
   assert.equal(first.game.players[0].ability.used, true);
-  assert.throws(() => useAbility(first.game, 'p1', 'p2'), /déjà été utilisée/i);
+  assert.throws(() => useAbility(first.game, 'p1', 'p1', 'impact_escape'), /déjà été utilisée/i);
 });
 
 test('les routes d’évacuation sont filtrées selon les conditions', () => {
@@ -139,7 +140,7 @@ test('une ancienne sauvegarde du chapitre 1 reprend au chapitre 2', () => {
     history: [{ flag: 'nora_saved' }],
   };
   const migrated = upgradeSavedGame(legacy);
-  assert.equal(migrated.version, 5);
+  assert.equal(migrated.version, 6);
   assert.equal(migrated.eventIndex, 3);
   assert.equal(getCurrentEvent(migrated).chapter, 2);
   assert.equal(migrated.flags.noraAlive, true);

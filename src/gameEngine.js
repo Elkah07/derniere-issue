@@ -88,6 +88,235 @@ function healPlayer(player, amount = 1) {
   if (player.lives > 0) removeStatus(player, 'Séparé du groupe');
 }
 
+
+const HIDDEN_PUBLIC_STATUSES = new Set(['Protégé', 'Endurant', 'Chance']);
+
+const TALENT_CONTEXTS = {
+  doctor: new Set(['save_nora', 'camp_tasks', 'rations', 'storm', 'jungle_ambush', 'ravine', 'outpost', 'medical_protocol', 'trapped', 'last_wave', 'bonus_fever', 'bonus_fire', 'bonus_current']),
+  protector: new Set(['save_nora', 'shelter_fuselage_aftershock', 'jungle_ambush', 'ravine', 'storm', 'trapped', 'last_wave', 'bonus_fire', 'bonus_current']),
+  tinkerer: new Set(['burning_crates', 'radio_voice', 'shelter_fuselage_aftershock', 'ravine', 'outpost', 'sabotage_clues', 'storm', 'generator', 'beacon_reply', 'boat_capacity', 'trapped', 'escape_route', 'last_wave', 'bonus_fire', 'bonus_silence']),
+  scout: new Set(['choose_shelter', 'shelter_beach_tide', 'shelter_jungle_source', 'expedition', 'scout_route', 'ravine', 'outpost', 'storm', 'generator', 'escape_route']),
+  observer: new Set(['missing_resource', 'radio_voice', 'sabotage_clues', 'judgment', 'revenge_offer', 'saboteur_cornered', 'uneasy_truce', 'black_dossier', 'final_choice']),
+  negotiator: new Set(['save_nora', 'choose_shelter', 'missing_resource', 'expedition', 'judgment', 'storm', 'generator', 'trapped', 'escape_route', 'last_wave']),
+  enduring: new Set(['impact_escape', 'burning_crates', 'save_nora', 'shelter_beach_tide', 'shelter_fuselage_aftershock', 'shelter_jungle_source', 'jungle_ambush', 'ravine', 'storm', 'trapped', 'last_wave', 'bonus_fever', 'bonus_fire', 'bonus_current']),
+  lucky: new Set(['impact_escape', 'burning_crates', 'save_nora', 'rations', 'missing_resource', 'radio_voice', 'jungle_ambush', 'split_cache', 'ravine', 'judgment', 'storm', 'trapped', 'final_choice', 'last_wave']),
+};
+
+const AFTERLIFE_PROFILES = {
+  isolated: {
+    id: 'isolated',
+    title: 'Survivant isolé',
+    icon: '🌫️',
+    briefing: "Tu es vivant, mais coupé du groupe. Une fois par chapitre, tu peux envoyer un signe, fouiller seul ou préparer ton retour.",
+  },
+  lost: {
+    id: 'lost',
+    title: 'Disparu dans la jungle',
+    icon: '🌴',
+    briefing: "Le groupe te croit perdu. Tu peux guider les autres, les égarer ou retrouver peu à peu le chemin du camp.",
+  },
+  prisoner: {
+    id: 'prisoner',
+    title: 'Prisonnier de la station',
+    icon: '⛓️',
+    briefing: "Tu es bloqué derrière les parois de la station. Tu peux agir sur ses systèmes, transmettre une preuve ou préparer une sortie.",
+  },
+  contaminated: {
+    id: 'contaminated',
+    title: 'Contaminé',
+    icon: '☣️',
+    briefing: "Ton état t’éloigne des autres. Tu peux résister, avertir le groupe ou céder à une action plus dangereuse.",
+  },
+  guardian: {
+    id: 'guardian',
+    title: 'Protecteur dans l’ombre',
+    icon: '🕯️',
+    briefing: "Ton sacrifice t’a séparé du groupe, mais tu peux encore protéger quelqu’un, inspirer les survivants ou tenter de revenir.",
+  },
+};
+
+function isSeparatedPlayer(player) {
+  return Boolean(player?.afterlife?.active) || (player?.lives ?? 0) <= 0 || player?.statuses?.includes('Séparé du groupe');
+}
+
+export function getActivePlayers(game) {
+  return (game?.players ?? []).filter((player) => !isSeparatedPlayer(player));
+}
+
+function inferAfterlifeProfile(player, eventId) {
+  if (player?.statuses?.includes('Contaminé') || ['bonus_fever', 'medical_protocol'].includes(eventId)) return AFTERLIFE_PROFILES.contaminated;
+  if (['generator', 'beacon_reply', 'boat_capacity', 'medical_protocol', 'black_dossier', 'trapped'].includes(eventId)) return AFTERLIFE_PROFILES.prisoner;
+  if (['shelter_jungle_source', 'jungle_ambush', 'split_cache', 'scout_route', 'ravine', 'outpost', 'bonus_tracks', 'bonus_cave'].includes(eventId)) return AFTERLIFE_PROFILES.lost;
+  if (['save_nora', 'trapped', 'last_wave'].includes(eventId)) return AFTERLIFE_PROFILES.guardian;
+  return AFTERLIFE_PROFILES.isolated;
+}
+
+function assignAfterlifeRoles(game, eventId, beforeLives = {}) {
+  game.players.forEach((player) => {
+    const justReachedZero = (beforeLives[player.id] ?? player.lives) > 0 && player.lives <= 0;
+    if (!justReachedZero || player.afterlife?.active) return;
+    const profile = inferAfterlifeProfile(player, eventId);
+    player.afterlife = {
+      ...profile,
+      active: true,
+      returnProgress: 0,
+      lastActedChapter: null,
+      enteredAtEvent: eventId,
+      actionsTaken: [],
+    };
+    addStatus(player, 'Séparé du groupe');
+    player.secrets.push(`${profile.title} : ${profile.briefing}`);
+    game.history.push({ type: 'afterlife-entered', playerId: player.id, profileId: profile.id, eventId, at: new Date().toISOString() });
+  });
+}
+
+export function getPendingAfterlifePlayers(game, event) {
+  if (!game || !event) return [];
+  return game.players.filter((player) => player.afterlife?.active && player.afterlife.lastActedChapter !== event.chapter);
+}
+
+export function getAfterlifeChoices(game, playerId, event) {
+  const player = game?.players?.find((item) => item.id === playerId);
+  if (!player?.afterlife?.active) return [];
+  const common = [
+    { id: 'return', icon: '🧭', label: 'Chercher un chemin de retour', description: 'Progresse vers un possible retour dans le groupe.' },
+  ];
+  const choices = {
+    isolated: [
+      { id: 'signal', icon: '🔦', label: 'Envoyer un signe discret', description: 'Le groupe gagne un indice de route ou de signal.' },
+      { id: 'scavenge', icon: '🎒', label: 'Fouiller seul', description: 'Tu peux faire parvenir une petite ressource au groupe.' },
+    ],
+    lost: [
+      { id: 'guide', icon: '🪶', label: 'Laisser une piste fiable', description: 'Le prochain danger de route sera mieux anticipé.' },
+      { id: 'mislead', icon: '🕳️', label: 'Créer une fausse piste', description: 'Tu peux égarer le groupe sans révéler ton intervention.' },
+    ],
+    prisoner: [
+      { id: 'unlock', icon: '🔧', label: 'Forcer un mécanisme', description: 'Une réparation ou une ouverture devient possible.' },
+      { id: 'evidence', icon: '📼', label: 'Transmettre une preuve', description: 'Le groupe reçoit une information fiable contre un mensonge.' },
+    ],
+    contaminated: [
+      { id: 'resist', icon: '🫁', label: 'Résister à la contamination', description: 'Tu avances vers un retour et stabilises ton état.' },
+      { id: 'spread', icon: '☣️', label: 'Contaminer une réserve', description: 'Le danger augmente et ton action reste secrète.', requiresTarget: true, targetLabel: 'Qui subira les conséquences ?' },
+    ],
+    guardian: [
+      { id: 'protect', icon: '🛡️', label: 'Protéger quelqu’un dans l’ombre', description: 'Une personne ignorera sa prochaine perte de vie.', requiresTarget: true, targetLabel: 'Qui veux-tu protéger ?' },
+      { id: 'inspire', icon: '🕯️', label: 'Laisser un message d’espoir', description: 'La cohésion du groupe augmente.' },
+    ],
+  }[player.afterlife.id] ?? [];
+  return [...choices, ...common];
+}
+
+export function resolveAfterlifeAction(game, playerId, actionId, selectedTargetId = null, eventId = null) {
+  const next = clone(game);
+  const player = next.players.find((item) => item.id === playerId);
+  const event = getEventById(eventId) ?? getCurrentEvent(next);
+  if (!player?.afterlife?.active) throw new Error('Ce joueur ne possède pas de parcours séparé actif.');
+  if (!event) throw new Error('Aucun événement actif.');
+  if (player.afterlife.lastActedChapter === event.chapter) throw new Error('Cette intervention a déjà été utilisée pendant ce chapitre.');
+  const available = getAfterlifeChoices(next, playerId, event);
+  const action = available.find((item) => item.id === actionId);
+  if (!action) throw new Error('Action séparée indisponible.');
+  const target = next.players.find((item) => item.id === selectedTargetId && item.id !== playerId);
+  const result = { title: `${player.afterlife.icon} ${player.afterlife.title}`, summary: [], secret: true };
+
+  if (actionId === 'signal') {
+    addGauge(next, 'signal', 1);
+    next.flags.scoutHint = true;
+    result.summary.push('Un signe discret atteint le groupe : Signal +1.');
+  }
+  if (actionId === 'scavenge') {
+    addGauge(next, 'reserves', 1);
+    result.summary.push('Une petite réserve est déposée près du camp : Réserves +1.');
+  }
+  if (actionId === 'guide') {
+    next.flags.scoutHint = true;
+    addGauge(next, 'cohesion', 1);
+    result.summary.push('Une piste fiable guide les survivants : Cohésion +1.');
+  }
+  if (actionId === 'mislead') {
+    addGauge(next, 'danger', 1);
+    recordBetrayal(next, player.id, null, 'Fausse piste laissée depuis la jungle', event.id, false);
+    result.summary.push('Une fausse piste détourne le groupe : Danger +1.');
+  }
+  if (actionId === 'unlock') {
+    next.flags.repairToken = true;
+    addGroupItem(next, 'Mécanisme déverrouillé');
+    result.summary.push('Un mécanisme cède dans la station. Une réparation de fortune devient disponible.');
+  }
+  if (actionId === 'evidence') {
+    next.flags.observerProof = true;
+    result.summary.push('Une preuve fiable parvient au groupe.');
+  }
+  if (actionId === 'resist') {
+    removeStatus(player, 'Contaminé');
+    player.afterlife.returnProgress += 1;
+    result.summary.push('La contamination recule et le chemin du retour se précise.');
+  }
+  if (actionId === 'spread') {
+    addGauge(next, 'danger', 1);
+    if (target) addStatus(target, 'Contaminé');
+    recordBetrayal(next, player.id, target?.id ?? null, 'Contamination depuis l’isolement', event.id, false);
+    result.summary.push(target ? `${target.name} est exposé à une contamination.` : 'Une réserve est contaminée : Danger +1.');
+  }
+  if (actionId === 'protect') {
+    const protectedTarget = target ?? getActivePlayers(next)[0];
+    if (protectedTarget) addStatus(protectedTarget, 'Protégé');
+    result.summary.push(protectedTarget ? `${protectedTarget.name} reçoit une protection invisible.` : 'La protection ne trouve aucune cible.');
+  }
+  if (actionId === 'inspire') {
+    addGauge(next, 'cohesion', 1);
+    result.summary.push('Un message inattendu redonne du courage : Cohésion +1.');
+  }
+  if (actionId === 'return') {
+    player.afterlife.returnProgress += 1;
+    result.summary.push('Tu avances vers le groupe sans encore pouvoir le rejoindre.');
+  }
+
+  if (player.afterlife.returnProgress >= 2) {
+    player.lives = 1;
+    player.afterlife.active = false;
+    removeStatus(player, 'Séparé du groupe');
+    removeStatus(player, 'Laissé derrière');
+    addStatus(player, 'Revenu de justesse');
+    result.summary.push(`${player.name} retrouve le groupe avec une vie.`);
+  }
+
+  player.afterlife.lastActedChapter = event.chapter;
+  player.afterlife.actionsTaken.push({ actionId, eventId: event.id, chapter: event.chapter, targetId: target?.id ?? null });
+  next.history.push({ type: 'afterlife-action', playerId, actionId, targetId: target?.id ?? null, eventId: event.id, chapter: event.chapter, at: new Date().toISOString() });
+  return { game: next, result };
+}
+
+function abilityIsContextual(game, player, event) {
+  if (!player || !event || player.ability?.used || isSeparatedPlayer(player)) return false;
+  const prompted = player.ability.promptedEvents ?? [];
+  if (prompted.includes(event.id)) return false;
+  const allowed = TALENT_CONTEXTS[player.ability.id];
+  if (!allowed?.has(event.id)) return false;
+  if (player.ability.id === 'doctor') {
+    return game.players.some((candidate) => candidate.lives < 3 || candidate.statuses.some((status) => ['Blessé', 'Affaibli', 'Contaminé'].includes(status)));
+  }
+  return true;
+}
+
+export function getEligibleTalentPlayers(game, event) {
+  if (!game || !event) return [];
+  return game.players.filter((player) => abilityIsContextual(game, player, event));
+}
+
+export function markTalentPrompted(game, playerId, eventId) {
+  const next = clone(game);
+  const player = next.players.find((item) => item.id === playerId);
+  if (!player) return next;
+  player.ability.promptedEvents ??= [];
+  if (!player.ability.promptedEvents.includes(eventId)) player.ability.promptedEvents.push(eventId);
+  return next;
+}
+
+export function publicStatuses(player) {
+  return (player?.statuses ?? []).filter((status) => !HIDDEN_PUBLIC_STATUSES.has(status) && status !== 'Séparé du groupe');
+}
+
 function pick(array, random = Math.random) {
   return array[Math.floor(random() * array.length)] ?? array[0];
 }
@@ -174,15 +403,16 @@ export function createInitialGame({ names, duration = 'normal', audience = 'all'
     statuses: [],
     inventory: [],
     secrets: [],
-    ability: { ...abilityPool[index % abilityPool.length], used: false },
+    ability: { ...abilityPool[index % abilityPool.length], used: false, promptedEvents: [] },
     role: null,
+    afterlife: null,
   }));
   const plot = assignPlot(players, random);
   const briefcaseFinder = pick(players, random)?.id ?? players[0].id;
   const radioListener = pick(players, random)?.id ?? players[0].id;
 
   return {
-    version: 5,
+    version: 6,
     createdAt: new Date().toISOString(),
     settings: { duration, audience },
     players,
@@ -240,10 +470,9 @@ export function createInitialGame({ names, duration = 'normal', audience = 'all'
 
 export function upgradeSavedGame(saved) {
   if (!saved) return null;
-  if (saved.version >= 5 && Array.isArray(saved.eventSequence)) return saved;
   if (saved.version >= 3 && Array.isArray(saved.eventSequence)) {
     const upgraded = clone(saved);
-    upgraded.version = 5;
+    upgraded.version = 6;
     upgraded.relations ??= Object.fromEntries(upgraded.players.map((player) => [player.id, Object.fromEntries(upgraded.players.filter((other) => other.id !== player.id).map((other) => [other.id, 0]))]));
     upgraded.betrayalLog ??= [];
     upgraded.flags ??= {};
@@ -254,6 +483,16 @@ export function upgradeSavedGame(saved) {
     upgraded.flags.framedPlayer ??= null;
     upgraded.flags.boatSeatClaims ??= {};
     upgraded.flags.timedOutDecisions ??= 0;
+    upgraded.players.forEach((player) => {
+      player.ability ??= { id: 'lucky', title: 'Chanceux', icon: '🍀', description: 'Annule une conséquence personnelle.', used: false };
+      player.ability.promptedEvents ??= [];
+      player.afterlife ??= null;
+      if (player.lives <= 0 && !player.afterlife?.active) {
+        const profile = AFTERLIFE_PROFILES.isolated;
+        player.afterlife = { ...profile, active: true, returnProgress: 0, lastActedChapter: null, enteredAtEvent: 'migration', actionsTaken: [] };
+        addStatus(player, 'Séparé du groupe');
+      }
+    });
     return upgraded;
   }
 
@@ -298,18 +537,22 @@ export function getCurrentEvent(game) {
 
 export function getEventActorId(game, event) {
   if (!event || event.mode !== 'privateOne') return null;
-  if (event.actorRule === 'briefcaseFinder') return game.flags.briefcaseFinder;
-  if (event.actorRule === 'evidenceHolder') {
-    return game.flags.evidenceHolder || game.flags.briefcaseOwner || game.flags.briefcaseFinder || game.players[0].id;
-  }
+  let candidateId = null;
+  if (event.actorRule === 'briefcaseFinder') candidateId = game.flags.briefcaseFinder;
+  if (event.actorRule === 'evidenceHolder') candidateId = game.flags.evidenceHolder || game.flags.briefcaseOwner || game.flags.briefcaseFinder;
   if (event.actorRule === 'random') {
-    const index = (game.eventIndex + game.players.length) % game.players.length;
-    return game.players[index]?.id ?? game.players[0].id;
+    const active = getActivePlayers(game);
+    const pool = active.length ? active : game.players;
+    const index = (game.eventIndex + pool.length) % pool.length;
+    candidateId = pool[index]?.id;
   }
-  if (event.actorRule === 'expeditionScout') return game.flags.expeditionScout ?? game.players[0].id;
-  if (event.actorRule === 'falseAccused') return game.flags.falseAccused ?? game.players[0].id;
-  if (event.actorRule === 'specialPlayer') return game.plot.specialPlayerId ?? game.players[0].id;
-  return game.players[0].id;
+  if (event.actorRule === 'expeditionScout') candidateId = game.flags.expeditionScout;
+  if (event.actorRule === 'falseAccused') candidateId = game.flags.falseAccused;
+  if (event.actorRule === 'specialPlayer') candidateId = game.plot.specialPlayerId;
+  const candidate = game.players.find((player) => player.id === candidateId);
+  if (candidate && !isSeparatedPlayer(candidate)) return candidate.id;
+  const fallback = getActivePlayers(game)[0] ?? game.players[0];
+  return fallback?.id ?? null;
 }
 
 function routeIsAvailable(game, routeId) {
@@ -331,13 +574,15 @@ export function getAvailableChoices(game, event, playerId = null) {
   });
 }
 
-export function useAbility(game, playerId, selectedTargetId = null) {
+export function useAbility(game, playerId, selectedTargetId = null, eventId = null) {
   const next = clone(game);
   const player = next.players.find((item) => item.id === playerId);
   if (!player) throw new Error('Joueur introuvable.');
   if (player.ability.used) throw new Error('Cette capacité a déjà été utilisée.');
+  const event = getEventById(eventId) ?? getCurrentEvent(next);
+  if (!abilityIsContextual(next, player, event)) throw new Error('Ce talent ne peut pas intervenir dans cette scène.');
 
-  const target = next.players.find((item) => item.id === selectedTargetId) ?? player;
+  const target = next.players.find((item) => item.id === selectedTargetId && !isSeparatedPlayer(item)) ?? player;
   const result = { title: `${player.ability.icon} ${player.ability.title}`, summary: [] };
 
   switch (player.ability.id) {
@@ -379,7 +624,9 @@ export function useAbility(game, playerId, selectedTargetId = null) {
   }
 
   player.ability.used = true;
-  next.history.push({ type: 'ability', playerId, abilityId: player.ability.id, at: new Date().toISOString() });
+  player.ability.promptedEvents ??= [];
+  if (event && !player.ability.promptedEvents.includes(event.id)) player.ability.promptedEvents.push(event.id);
+  next.history.push({ type: 'ability', playerId, abilityId: player.ability.id, eventId: event?.id ?? null, at: new Date().toISOString() });
   return { game: next, result };
 }
 
@@ -568,10 +815,7 @@ function applyBranching(game, eventId, choices, extra, result) {
 }
 
 function determineEnding(game) {
-  const active = game.players.filter((player) =>
-    (player.lives > 0 || !player.statuses.includes('Séparé du groupe'))
-    && game.flags.leftBehind !== player.id
-  );
+  const active = getActivePlayers(game).filter((player) => game.flags.leftBehind !== player.id);
   const requestedRoute = game.flags.route ?? 'stay';
   let route = requestedRoute;
   const routeFailed = game.flags.routeFailed || game.flags.sabotageSuccess;
@@ -646,6 +890,7 @@ function determineEnding(game) {
 
 export function resolveEvent(game, eventId, choices = {}, extra = {}) {
   const next = clone(game);
+  const beforeLives = Object.fromEntries(next.players.map((player) => [player.id, player.lives]));
   const event = getEventById(eventId);
   if (!event) throw new Error(`Événement inconnu : ${eventId}`);
   choices = clone(choices ?? {});
@@ -660,7 +905,7 @@ export function resolveEvent(game, eventId, choices = {}, extra = {}) {
     }
   }
   if (event.mode === 'privateEach') {
-    next.players.forEach((player) => {
+    getActivePlayers(next).forEach((player) => {
       if (!choiceId(choices[player.id])) {
         choices[player.id] = extra.timeout ? (event.timeoutChoice ?? 'inaction') : 'inaction';
         if (extra.timeout && !timedOutIds.includes(player.id)) timedOutIds.push(player.id);
@@ -1536,6 +1781,9 @@ export function resolveEvent(game, eventId, choices = {}, extra = {}) {
   applyPromiseOutcomes(next, event, choices, result);
   applyTimeoutEffects(next, event, result, timedOutIds, groupTimedOut);
   applyBranching(next, eventId, choices, extra, result);
+  assignAfterlifeRoles(next, eventId, beforeLives);
+  const newlySeparated = next.players.filter((player) => (beforeLives[player.id] ?? player.lives) > 0 && player.lives <= 0 && player.afterlife?.active);
+  newlySeparated.forEach((player) => result.summary.push(`${player.name} est séparé du groupe, mais continue désormais un parcours secret.`));
   if (next.flags.scoutHint) next.flags.scoutHint = false;
   next.history.push({ eventId, choices: clone(choices), extra: { ...clone(extra), timedOutIds }, resolvedAt: new Date().toISOString() });
   next.eventIndex += 1;

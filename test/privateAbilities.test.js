@@ -4,14 +4,22 @@ import { readFile } from 'node:fs/promises';
 
 const main = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
 
-test('les capacités ne sont plus affichées dans une liste publique', () => {
+test('les talents ne sont plus affichés ni activables depuis une liste publique', () => {
   assert.equal(main.includes('data-action="abilities"'), false);
+  assert.equal(main.includes('data-action="ability-select"'), false);
   assert.equal(main.includes('Capacités du groupe'), false);
+  assert.equal(main.includes('Utiliser secrètement maintenant'), false);
 });
 
-test('l’utilisation passe par un dossier privé et un écran masqué', () => {
-  assert.equal(main.includes('data-action="ability-select"'), true);
-  assert.equal(main.includes('DOSSIER STRICTEMENT PRIVÉ'), true);
-  assert.equal(main.includes('Utiliser secrètement maintenant'), true);
-  assert.equal(main.includes('Masquer et revenir à l’aventure'), true);
+test('les talents sont proposés automatiquement dans une fenêtre privée contextuelle', () => {
+  assert.equal(main.includes('FENÊTRE DE TALENT SECRET'), true);
+  assert.equal(main.includes('data-action="talent-use"'), true);
+  assert.equal(main.includes('Le conserver'), true);
+  assert.equal(main.includes('POURQUOI MAINTENANT ?'), true);
+});
+
+test('un joueur à zéro vie reçoit une action privée au lieu de quitter la partie', () => {
+  assert.equal(main.includes('PARCOURS SÉPARÉ'), true);
+  assert.equal(main.includes('À zéro vie, la partie ne s’arrête pas'), true);
+  assert.equal(main.includes('data-afterlife-action'), true);
 });

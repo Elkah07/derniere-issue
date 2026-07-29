@@ -6,6 +6,13 @@ import {
   getAvailableChoices,
   getCurrentEvent,
   getEventActorId,
+  getActivePlayers,
+  getEligibleTalentPlayers,
+  markTalentPrompted,
+  getPendingAfterlifePlayers,
+  getAfterlifeChoices,
+  resolveAfterlifeAction,
+  publicStatuses,
   resolveEvent,
   registerPromises,
   upgradeSavedGame,
@@ -44,11 +51,17 @@ let ui = {
   selectedGroupChoice: null,
   actorId: null,
   result: null,
-  abilityResult: null,
-  abilityTargets: {},
-  abilityViewerId: null,
-  abilityReady: false,
-  abilityPrivateResult: null,
+  talentQueue: [],
+  talentEligibleIds: [],
+  talentIndex: 0,
+  talentReady: false,
+  talentTargetId: null,
+  talentPrivateResult: null,
+  afterlifeQueue: [],
+  afterlifeIndex: 0,
+  afterlifeReady: false,
+  afterlifeTargetId: null,
+  afterlifePrivateResult: null,
   discussionPromises: [],
   promiseDraft: { playerId: null, promiseId: null, targetId: '' },
   timedOutIds: [],
@@ -115,8 +128,8 @@ function getSceneDescriptor(screen = ui.screen, game = ui.game, event = currentE
   let scene = 'menu';
   let cue = 'fade';
 
-  if (['home', 'adventure', 'setup', 'settings', 'rules', 'briefing', 'abilitySelect', 'abilityPrivate'].includes(screen)) {
-    if (['briefing', 'abilitySelect', 'abilityPrivate'].includes(screen)) {
+  if (['home', 'adventure', 'setup', 'settings', 'rules', 'briefing', 'talentPrompt', 'afterlifePrompt'].includes(screen)) {
+    if (['briefing', 'talentPrompt', 'afterlifePrompt'].includes(screen)) {
       scene = 'briefing';
       cue = 'reveal';
     } else if (screen === 'adventure' || screen === 'setup') {
@@ -162,7 +175,7 @@ function getSceneDescriptor(screen = ui.screen, game = ui.game, event = currentE
     else cue = 'pulse';
   } else if (screen === 'chapter') cue = chapter === 1 ? 'impact' : 'fade';
   else if (screen === 'discussion') cue = 'pulse';
-  else if (screen === 'privateChoice' || screen === 'groupChoice') cue = 'reveal';
+  else if (['privateChoice', 'groupChoice', 'talentPrompt', 'afterlifePrompt'].includes(screen)) cue = 'reveal';
 
   return { key: `${screen}:${event?.id ?? 'none'}:${scene}`, classes, cue };
 }
@@ -347,11 +360,22 @@ function beginEvent() {
   ui.passReady = false;
   ui.pendingChoice = null;
   ui.selectedGroupChoice = null;
-  ui.actorId = ui.game.players[0]?.id ?? null;
+  ui.actorId = getActivePlayers(ui.game)[0]?.id ?? ui.game.players[0]?.id ?? null;
   ui.timedOutIds = [];
+  ui.talentQueue = [];
+  ui.talentEligibleIds = [];
+  ui.talentIndex = 0;
+  ui.talentReady = false;
+  ui.talentTargetId = null;
+  ui.talentPrivateResult = null;
+  ui.afterlifeQueue = [];
+  ui.afterlifeIndex = 0;
+  ui.afterlifeReady = false;
+  ui.afterlifeTargetId = null;
+  ui.afterlifePrivateResult = null;
   ui.discussionPromises = [];
   ui.promiseDraft = {
-    playerId: ui.game.players[0]?.id ?? null,
+    playerId: getActivePlayers(ui.game)[0]?.id ?? ui.game.players[0]?.id ?? null,
     promiseId: event.promiseOptions?.[0]?.id ?? null,
     targetId: '',
   };
@@ -373,15 +397,130 @@ function startChoicePhase() {
     saveGame(ui.game);
   }
 
+  ui.talentEligibleIds = getEligibleTalentPlayers(ui.game, event).map((player) => player.id);
+  ui.talentQueue = ui.talentEligibleIds.length ? getActivePlayers(ui.game).map((player) => player.id) : [];
+  ui.talentIndex = 0;
+  ui.talentReady = false;
+  ui.talentTargetId = null;
+  ui.talentPrivateResult = null;
+  ui.afterlifeQueue = getPendingAfterlifePlayers(ui.game, event).map((player) => player.id);
+  ui.afterlifeIndex = 0;
+  ui.afterlifeReady = false;
+  ui.afterlifeTargetId = null;
+  ui.afterlifePrivateResult = null;
+  openNextIntervention();
+}
+
+function openNextIntervention() {
+  if (ui.talentIndex < ui.talentQueue.length) {
+    setScreen('talentPrompt');
+    return;
+  }
+  if (ui.afterlifeIndex < ui.afterlifeQueue.length) {
+    setScreen('afterlifePrompt');
+    return;
+  }
+  enterMainChoicePhase();
+}
+
+function enterMainChoicePhase() {
+  const event = currentEvent();
+  if (!event) return;
+  const activePlayers = getActivePlayers(ui.game);
+  ui.actorId = activePlayers[0]?.id ?? ui.game.players[0]?.id ?? null;
+
   if (event.mode === 'group') {
     setScreen('groupChoice');
     startCountdown(event.decisionSeconds ?? 25, 'decision', submitGroupTimeout);
     return;
   }
 
-  if (event.mode === 'privateOne') ui.privateOrder = [getEventActorId(ui.game, event)];
-  else ui.privateOrder = ui.game.players.map((player) => player.id);
+  if (event.mode === 'privateOne') {
+    const actorId = getEventActorId(ui.game, event);
+    ui.privateOrder = actorId ? [actorId] : [];
+  } else {
+    ui.privateOrder = activePlayers.map((player) => player.id);
+  }
+
+  if (!ui.privateOrder.length) {
+    const { game, result } = resolveEvent(ui.game, event.id, {}, { timeout: true, timedOutIds: [] });
+    ui.game = game;
+    ui.result = result;
+    saveGame(ui.game);
+    setScreen('result');
+    return;
+  }
+  ui.privateTurnIndex = 0;
   setScreen('privateChoice');
+}
+
+function currentTalentPlayer() {
+  const id = ui.talentQueue[ui.talentIndex];
+  return ui.game.players.find((player) => player.id === id) ?? null;
+}
+
+function advanceTalentWindow() {
+  ui.talentIndex += 1;
+  ui.talentReady = false;
+  ui.talentTargetId = null;
+  ui.talentPrivateResult = null;
+  openNextIntervention();
+}
+
+function skipCurrentTalent() {
+  const player = currentTalentPlayer();
+  const event = currentEvent();
+  if (player && event && getEligibleTalentPlayers(ui.game, event).some((candidate) => candidate.id === player.id)) {
+    ui.game = markTalentPrompted(ui.game, player.id, event.id);
+    saveGame(ui.game);
+  }
+  advanceTalentWindow();
+}
+
+function useCurrentTalent() {
+  const player = currentTalentPlayer();
+  const event = currentEvent();
+  if (!player || !event) return;
+  try {
+    const targetId = ui.talentTargetId ?? player.id;
+    const { game, result } = useAbility(ui.game, player.id, targetId, event.id);
+    ui.game = game;
+    ui.talentPrivateResult = result;
+    saveGame(ui.game);
+    audioDirector.play('secret', 0.32);
+    render();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+function currentAfterlifePlayer() {
+  const id = ui.afterlifeQueue[ui.afterlifeIndex];
+  return ui.game.players.find((player) => player.id === id) ?? null;
+}
+
+function advanceAfterlifeWindow() {
+  ui.afterlifeIndex += 1;
+  ui.afterlifeReady = false;
+  ui.afterlifeTargetId = null;
+  ui.afterlifePrivateResult = null;
+  openNextIntervention();
+}
+
+function useAfterlifeAction(actionId) {
+  const player = currentAfterlifePlayer();
+  const event = currentEvent();
+  if (!player || !event) return;
+  try {
+    const { game, result } = resolveAfterlifeAction(ui.game, player.id, actionId, ui.afterlifeTargetId, event.id);
+    ui.game = game;
+    ui.afterlifePrivateResult = result;
+    saveGame(ui.game);
+    audioDirector.play('secret', 0.28);
+    render();
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 function addDiscussionPromise() {
@@ -406,10 +545,10 @@ function currentPrivatePlayer() {
   return ui.game.players.find((player) => player.id === id) ?? ui.game.players[0];
 }
 
-function playResolutionAudio(result) {
-  if (!result || result.timedOut) return;
-  audioDirector.play(result.secret ? 'secret' : 'result', result.secret ? 0.8 : 1);
+function playResolutionAudio() {
+  // Les scènes fortes possèdent déjà leur propre effet. Aucun jingle générique n’est ajouté.
 }
+
 
 function submitPrivateChoice(choiceId, selectedTargetId = null, timedOut = false) {
   clearCountdown();
@@ -473,21 +612,6 @@ function submitGroupTimeout() {
   saveGame(ui.game);
   setScreen('result');
 }
-
-function usePlayerAbility(playerId) {
-  try {
-    const targetId = ui.abilityTargets[playerId] ?? playerId;
-    const { game, result } = useAbility(ui.game, playerId, targetId);
-    ui.game = game;
-    ui.abilityPrivateResult = result;
-    saveGame(ui.game);
-    audioDirector.play('secret', 0.45);
-    render();
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
 
 function gaugeCard(icon, label, value, min = 0) {
   const normalized = clamp(value - min, 0, 5 - min);
@@ -563,7 +687,7 @@ function renderHome() {
         <button class="menu-tile" data-action="settings"><span class="tile-icon">⚙</span><span><strong>Réglages</strong><small>Confort et accessibilité</small></span></button>
         <div class="menu-tile status-tile"><span class="tile-icon">⌁</span><span><strong>Hors ligne</strong><small>Un seul téléphone suffit</small></span></div>
       </nav>
-      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.7.1</footer>
+      <footer class="menu-footer">DERNIÈRE ISSUE · VERSION 0.8</footer>
     </main>
   `;
 }
@@ -624,10 +748,10 @@ function renderRules() {
       <header class="topbar"><button class="icon-button" data-action="home">←</button><div><p class="kicker">DERNIÈRE ISSUE</p><h2>Comment jouer</h2></div></header>
       <section class="rules-hero panel"><span>2–8</span><div><strong>Un téléphone suffit</strong><p>Faites circuler l’appareil lors des choix et briefings secrets.</p></div></section>
       <section class="rules-list">
-        <article><b>01</b><div><h3>Recevez votre briefing secret</h3><p>Chaque joueur découvre une capacité et parfois un objectif personnel. Rien n’est révélé aux autres avant la fin.</p></div></article>
+        <article><b>01</b><div><h3>Recevez votre briefing secret</h3><p>Chaque joueur découvre un talent et parfois un objectif personnel. Le talent n’apparaît ensuite que dans les scènes où il peut intervenir.</p></div></article>
         <article><b>02</b><div><h3>Parlez avant de choisir</h3><p>Le chrono lance une vraie discussion orale : négociez, promettez, accusez ou mentez.</p></div></article>
         <article><b>03</b><div><h3>Décidez sous pression</h3><p>Si personne ne valide à temps, l’histoire applique une conséquence adaptée à la scène.</p></div></article>
-        <article><b>04</b><div><h3>Ouvrez votre propre chemin</h3><p>Le camp, l’expédition, le jugement et les systèmes choisis déclenchent des événements exclusifs.</p></div></article>
+        <article><b>04</b><div><h3>Continuez même à zéro vie</h3><p>Un joueur séparé obtient un parcours secret : il peut guider, saboter, protéger ou préparer son retour.</p></div></article><article><b>05</b><div><h3>Ouvrez votre propre chemin</h3><p>Le camp, l’expédition, le jugement et les systèmes choisis déclenchent des événements exclusifs.</p></div></article>
       </section>
       <div class="tip-card"><span>!</span><p><strong>Conseil</strong> Ne montrez jamais un écran privé. Vous pouvez dire la vérité, mentir ou ne rien révéler.</p></div>
       <button class="button primary" data-action="home">Choisir une aventure</button>
@@ -651,7 +775,7 @@ function renderSetup() {
 function renderBriefing() {
   const player = ui.game.players[ui.briefingIndex];
   if (!ui.briefingReady) {
-    app.innerHTML = `<main class="shell private-shell"><section class="privacy-card"><div class="privacy-icon">🔐</div><p class="kicker">BRIEFING SECRET ${ui.briefingIndex + 1}/${ui.game.players.length}</p><h2>Passe le téléphone à<br><span>${escapeHtml(player.name)}</span></h2><p>Cette carte révèle une capacité et peut contenir un objectif secret.</p><button class="button primary" data-action="reveal-briefing">Je suis ${escapeHtml(player.name)}</button></section></main>`;
+    app.innerHTML = `<main class="shell private-shell"><section class="privacy-card"><div class="privacy-icon">🔐</div><p class="kicker">BRIEFING SECRET ${ui.briefingIndex + 1}/${ui.game.players.length}</p><h2>Passe le téléphone à<br><span>${escapeHtml(player.name)}</span></h2><p>Cette carte révèle un talent secret et peut contenir un objectif personnel.</p><button class="button primary" data-action="reveal-briefing">Je suis ${escapeHtml(player.name)}</button></section></main>`;
     return;
   }
   app.innerHTML = `
@@ -659,7 +783,7 @@ function renderBriefing() {
       <section class="briefing-card">
         <p class="kicker">BRIEFING DE ${escapeHtml(player.name).toUpperCase()}</p>
         <div class="briefing-symbol">${player.ability.icon}</div>
-        <h2>${escapeHtml(player.ability.title)}</h2><p>${escapeHtml(player.ability.description)}</p><div class="private-ability-note"><strong>Garde cette capacité secrète.</strong><span>Tu pourras la consulter et l’utiliser depuis « Dossier privé » entre les scènes.</span></div>
+        <h2>${escapeHtml(player.ability.title)}</h2><p>${escapeHtml(player.ability.description)}</p><div class="private-ability-note"><strong>Garde ce talent secret.</strong><span>L’application te proposera automatiquement de l’utiliser uniquement lorsqu’il peut réellement intervenir.</span></div>
         <div class="role-card ${player.role.id === 'saboteur' ? 'danger-role' : ''}"><small>OBJECTIF PERSONNEL</small><strong>${escapeHtml(player.role.title)}</strong><p>${escapeHtml(player.role.briefing)}</p></div>
         <p class="privacy-hint">Ne montre pas cet écran aux autres joueurs.</p>
         <button class="button primary" data-action="next-briefing">${ui.briefingIndex === ui.game.players.length - 1 ? 'Commencer l’aventure' : 'Masquer et passer au suivant'}</button>
@@ -684,21 +808,22 @@ function renderChapter() {
 }
 
 function playerCard(player) {
-  const publicStatuses = player.statuses.filter((status) => !['Protégé', 'Endurant', 'Chance'].includes(status));
-  return `<article class="player-card"><div class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</div><div class="player-main"><strong>${escapeHtml(player.name)}</strong><div class="lives">${'❤️'.repeat(player.lives)}${'🖤'.repeat(3 - player.lives)}</div><small>${publicStatuses.length ? escapeHtml(publicStatuses.join(' · ')) : 'En état de jouer'}</small></div><div class="inventory">${player.inventory.length ? player.inventory.map((item) => `<span>${escapeHtml(item)}</span>`).join('') : '<span>Inventaire vide</span>'}</div></article>`;
+  const visibleStatuses = publicStatuses(player);
+  const separated = player.afterlife?.active;
+  const stateLabel = separated ? 'Séparé du groupe · agit encore en secret' : (visibleStatuses.length ? visibleStatuses.join(' · ') : 'En état de jouer');
+  return `<article class="player-card ${separated ? 'separated-player' : ''}"><div class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</div><div class="player-main"><strong>${escapeHtml(player.name)}</strong><div class="lives">${'❤️'.repeat(player.lives)}${'🖤'.repeat(3 - player.lives)}</div><small>${escapeHtml(stateLabel)}</small></div><div class="inventory">${player.inventory.length ? player.inventory.map((item) => `<span>${escapeHtml(item)}</span>`).join('') : '<span>Inventaire vide</span>'}</div></article>`;
 }
-
 function renderGame() {
   const event = currentEvent();
   if (!event) return ui.game.complete ? renderEnding() : renderHome();
   const chapter = chapters[event.chapter];
-  const hint = ui.game.flags.scoutHint ? '<div class="scout-hint">🧭 L’Éclaireur pressent que ce choix peut modifier une route disponible plus tard.</div>' : '';
+  const hint = ui.game.flags.scoutHint ? '<div class="scout-hint">🧭 Un détail du terrain révèle que ce choix peut modifier une route disponible plus tard.</div>' : '';
   app.innerHTML = `
     <main class="shell game-shell">
       <header class="topbar compact"><button class="icon-button" data-action="home">⌂</button><div><p class="kicker">DERNIÈRE ISSUE · LE CRASH</p><h2>Chapitre ${event.chapter} · ${escapeHtml(chapter.title)}</h2></div><button class="icon-button danger-button" data-action="reset">↺</button></header>
       <section class="gauges">${gaugeCard('🥫', 'Réserves', ui.game.gauges.reserves)}${gaugeCard('⛺', 'Refuge', ui.game.gauges.shelter)}${gaugeCard('📡', 'Signal', ui.game.gauges.signal)}${gaugeCard('⚠️', 'Danger', ui.game.gauges.danger)}</section>
       <section class="story-card"><div class="event-number">ÉTAPE ${ui.game.eventIndex + 1}/${ui.game.eventSequence.length}${event.secondary ? ' · IMPRÉVU' : ''}${event.branch ? ' · CHEMIN EXCLUSIF' : ''}</div><p class="kicker">CHAPITRE ${event.chapter} · ${escapeHtml(chapter.title).toUpperCase()}</p><h2>${escapeHtml(event.title)}</h2>${renderParagraphs(getEventNarrative(ui.game, event), 'event-narrative')}${hint}<div class="oral-cue"><span>🗣️</span><p><strong>Cette scène se joue à voix haute.</strong><br>${event.discussionSeconds ? `Vous aurez ${event.discussionSeconds} secondes pour discuter avant les choix.` : 'Lisez la scène, puis passez le téléphone pour les décisions privées.'}</p></div><button class="button primary" data-action="begin-event">${event.discussionSeconds ? 'Lancer la discussion' : 'Faire les choix'}</button></section>
-      <section class="group-bag"><div><p class="step">RESSOURCES COMMUNES</p><div class="inventory common-inventory">${ui.game.groupInventory.length ? ui.game.groupInventory.map((item) => `<span>${escapeHtml(item)}</span>`).join('') : '<span>Aucun objet commun</span>'}</div></div><button class="button secondary small-button secret-dossier-button" data-action="ability-select">🔒 Dossier privé</button></section>
+      <section class="group-bag"><div><p class="step">RESSOURCES COMMUNES</p><div class="inventory common-inventory">${ui.game.groupInventory.length ? ui.game.groupInventory.map((item) => `<span>${escapeHtml(item)}</span>`).join('') : '<span>Aucun objet commun</span>'}</div></div><span class="context-talent-note">✦ Les talents secrets apparaissent au moment utile</span></section>
       <section><div class="section-heading"><div><p class="step">SURVIVANTS</p><h3>État du groupe</h3></div><span class="cohesion-pill">🤝 Cohésion ${ui.game.gauges.cohesion}</span></div><div class="players-stack">${ui.game.players.map(playerCard).join('')}</div></section>
     </main>`;
 }
@@ -716,9 +841,9 @@ function renderDiscussion() {
       <div class="section-heading"><div><p class="step">PROMESSES PUBLIQUES</p><h3>Vous pouvez vous engager à voix haute</h3></div></div>
       <p>Une promesse enregistrée sera comparée au choix secret. La briser affectera la confiance et apparaîtra dans le bilan.</p>
       <div class="promise-form">
-        <label><span>Qui promet ?</span><select data-promise-player>${ui.game.players.map((player) => `<option value="${player.id}" ${ui.promiseDraft.playerId === player.id ? 'selected' : ''}>${escapeHtml(player.name)}</option>`).join('')}</select></label>
+        <label><span>Qui promet ?</span><select data-promise-player>${getActivePlayers(ui.game).map((player) => `<option value="${player.id}" ${ui.promiseDraft.playerId === player.id ? 'selected' : ''}>${escapeHtml(player.name)}</option>`).join('')}</select></label>
         <label><span>Promesse</span><select data-promise-type>${event.promiseOptions.map((option) => `<option value="${option.id}" ${ui.promiseDraft.promiseId === option.id ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select></label>
-        <label><span>À propos de quelqu’un ? <small>facultatif</small></span><select data-promise-target><option value="">Tout le groupe</option>${ui.game.players.filter((player) => player.id !== ui.promiseDraft.playerId).map((player) => `<option value="${player.id}" ${ui.promiseDraft.targetId === player.id ? 'selected' : ''}>${escapeHtml(player.name)}</option>`).join('')}</select></label>
+        <label><span>À propos de quelqu’un ? <small>facultatif</small></span><select data-promise-target><option value="">Tout le groupe</option>${getActivePlayers(ui.game).filter((player) => player.id !== ui.promiseDraft.playerId).map((player) => `<option value="${player.id}" ${ui.promiseDraft.targetId === player.id ? 'selected' : ''}>${escapeHtml(player.name)}</option>`).join('')}</select></label>
         <button class="button secondary" data-action="add-promise">Enregistrer la promesse</button>
       </div>
       ${promises ? `<ul class="promise-list">${promises}</ul>` : '<p class="empty-promises">Aucune promesse enregistrée. Les paroles restent libres.</p>'}
@@ -741,7 +866,7 @@ function renderPrivateChoice() {
   const available = getAvailableChoices(ui.game, event, player.id);
   if (ui.pendingChoice) {
     const pending = available.find((choice) => choice.id === ui.pendingChoice);
-    const targets = ui.game.players.filter((target) => target.id !== player.id).map((target) => `<button class="target-card" data-target-player="${target.id}"><span class="player-avatar">${escapeHtml(target.name.slice(0, 1).toUpperCase())}</span><strong>${escapeHtml(target.name)}</strong><span>›</span></button>`).join('');
+    const targets = getActivePlayers(ui.game).filter((target) => target.id !== player.id).map((target) => `<button class="target-card" data-target-player="${target.id}"><span class="player-avatar">${escapeHtml(target.name.slice(0, 1).toUpperCase())}</span><strong>${escapeHtml(target.name)}</strong><span>›</span></button>`).join('');
     app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">CHOIX DE ${escapeHtml(player.name).toUpperCase()}</p><h2>${escapeHtml(pending.targetLabel ?? 'Choisis une personne')}</h2><p>Cette sélection restera secrète jusqu’à la résolution.</p></header><div class="target-stack">${targets}</div><button class="button secondary" data-action="cancel-target">Retour aux choix</button></main>`;
     return;
   }
@@ -758,7 +883,7 @@ function renderGroupChoice() {
   }
   const cards = available.map((choice) => `<button class="choice-card ${ui.selectedGroupChoice === choice.id ? 'selected' : ''}" data-group-choice="${choice.id}"><span class="choice-icon">${choice.icon}</span><span class="choice-copy"><strong>${escapeHtml(choice.label)}</strong><small>${escapeHtml(choice.description)}</small></span><span class="choice-check">${ui.selectedGroupChoice === choice.id ? '✓' : ''}</span></button>`).join('');
   const selected = available.find((choice) => choice.id === ui.selectedGroupChoice);
-  const actorSelect = selected?.requiresActor ? `<label class="field volunteer-field"><span>${escapeHtml(selected.actorLabel ?? 'Qui agit ?')}</span><select data-actor>${ui.game.players.map((player) => `<option value="${player.id}" ${ui.actorId === player.id ? 'selected' : ''}>${escapeHtml(player.name)}</option>`).join('')}</select></label>` : '';
+  const actorSelect = selected?.requiresActor ? `<label class="field volunteer-field"><span>${escapeHtml(selected.actorLabel ?? 'Qui agit ?')}</span><select data-actor>${getActivePlayers(ui.game).map((player) => `<option value="${player.id}" ${ui.actorId === player.id ? 'selected' : ''}>${escapeHtml(player.name)}</option>`).join('')}</select></label>` : '';
   app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">CHAPITRE ${event.chapter} · DÉCISION DU GROUPE</p><h2>${escapeHtml(event.title)}</h2><p>${escapeHtml(event.prompt)}</p></header>${countdownMarkup(event.decisionSeconds ?? 25, 'Temps pour valider')}<div class="choice-stack">${cards}</div>${actorSelect}<button class="button primary sticky-action" data-action="confirm-group" ${ui.selectedGroupChoice ? '' : 'disabled'}>Valider la décision</button></main>`;
 }
 
@@ -769,27 +894,56 @@ function renderResult() {
   app.innerHTML = `<main class="shell result-shell"><section class="result-card"><div class="result-icon">✦</div><p class="kicker">CONSÉQUENCES</p><h2>${escapeHtml(ui.result.title)}</h2>${renderParagraphs(narrative, 'result-narrative')}<div class="mechanical-impact"><strong>Ce que cela change</strong><ul>${summary}</ul></div>${ui.result.timedOut ? '<div class="timeout-result"><strong>⏳ Le temps a expiré.</strong><p>L’inaction a déclenché une conséquence propre à cette scène.</p></div>' : ''}${ui.result.secret ? '<div class="secret-result"><strong>Une partie de cette conséquence reste secrète.</strong><p>La vérité pourra apparaître plus tard dans l’aventure ou dans le bilan final.</p></div>' : ''}<div class="mini-gauges"><span>🥫 ${ui.game.gauges.reserves}/5</span><span>⛺ ${ui.game.gauges.shelter}/5</span><span>📡 ${ui.game.gauges.signal}/5</span><span>⚠️ ${ui.game.gauges.danger}/5</span><span>🤝 ${ui.game.gauges.cohesion}</span></div><button class="button primary" data-action="continue">${escapeHtml(nextText)}</button></section></main>`;
 }
 
-function renderAbilitySelect() {
-  const playerButtons = ui.game.players.map((player) => `<button class="target-card private-player-entry" data-ability-player="${player.id}"><span class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</span><strong>${escapeHtml(player.name)}</strong><span>›</span></button>`).join('');
-  app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">DOSSIER STRICTEMENT PRIVÉ</p><h2>Qui consulte son pouvoir ?</h2><p>Choisissez votre prénom, puis passez le téléphone. Aucun rôle ni pouvoir n’est visible sur cet écran.</p></header><div class="target-stack">${playerButtons}</div><button class="button secondary" data-action="back-game">Retour à l’aventure</button></main>`;
-}
-
-function renderAbilityPrivate() {
-  const player = ui.game.players.find((item) => item.id === ui.abilityViewerId) ?? ui.game.players[0];
-  if (!ui.abilityReady) {
-    app.innerHTML = `<main class="shell private-shell"><section class="privacy-card"><div class="privacy-icon">🔒</div><p class="kicker">DOSSIER SECRET</p><h2>Passe le téléphone à<br><span>${escapeHtml(player.name)}</span></h2><p>Les autres joueurs doivent détourner les yeux. La capacité et son utilisation restent privées.</p><button class="button primary" data-action="ability-ready">Je suis ${escapeHtml(player.name)}</button><button class="button secondary" data-action="ability-mask">Annuler</button></section></main>`;
+function renderTalentPrompt() {
+  const player = currentTalentPlayer();
+  const event = currentEvent();
+  if (!player || !event) return openNextIntervention();
+  if (!ui.talentReady) {
+    app.innerHTML = `<main class="shell private-shell"><section class="privacy-card"><div class="privacy-icon">✦</div><p class="kicker">FENÊTRE DE TALENT SECRET</p><h2>Passe le téléphone à<br><span>${escapeHtml(player.name)}</span></h2><p>Chaque joueur vérifie ses options secrètes. Les autres doivent détourner les yeux.</p><button class="button primary" data-action="talent-ready">Je suis ${escapeHtml(player.name)}</button></section></main>`;
     return;
   }
 
-  const targetSelect = player.ability.target && !player.ability.used
-    ? `<label class="field private-ability-target"><span>Cible du pouvoir</span><select data-ability-target="${player.id}">${ui.game.players.map((target) => `<option value="${target.id}" ${(ui.abilityTargets[player.id] ?? player.id) === target.id ? 'selected' : ''}>${escapeHtml(target.name)}</option>`).join('')}</select></label>`
-    : '';
+  const isEligible = getEligibleTalentPlayers(ui.game, event).some((candidate) => candidate.id === player.id);
+  if (!isEligible) {
+    app.innerHTML = `<main class="shell private-shell"><section class="privacy-card private-power-card"><div class="privacy-icon">◇</div><p class="kicker">VÉRIFICATION SECRÈTE</p><h2>Aucune intervention ici</h2><p>Ton talent ne correspond pas à cette scène, ou il a déjà été utilisé. Garde cette information pour toi.</p><button class="button primary" data-action="talent-continue">Masquer et passer au suivant</button></section></main>`;
+    return;
+  }
 
-  const confirmation = ui.abilityPrivateResult
-    ? `<div class="private-power-confirmation"><strong>Pouvoir utilisé discrètement.</strong><p>${ui.abilityPrivateResult.summary.map((line) => escapeHtml(line)).join('<br>')}</p><small>Le jeu n’annoncera pas qui a utilisé la capacité. Certains effets pourront seulement être remarqués plus tard.</small></div>`
+  const activeTargets = getActivePlayers(ui.game);
+  const preferredTarget = activeTargets.find((target) => target.lives < 3 || target.statuses.length) ?? activeTargets[0] ?? player;
+  if (!ui.talentTargetId) ui.talentTargetId = preferredTarget?.id ?? player.id;
+  const targetSelect = player.ability.target
+    ? `<label class="field private-ability-target"><span>Cible du talent</span><select data-talent-target>${activeTargets.map((target) => `<option value="${target.id}" ${ui.talentTargetId === target.id ? 'selected' : ''}>${escapeHtml(target.name)}</option>`).join('')}</select></label>`
     : '';
+  const confirmation = ui.talentPrivateResult
+    ? `<div class="private-power-confirmation"><strong>Talent utilisé discrètement.</strong><p>${ui.talentPrivateResult.summary.map((line) => escapeHtml(line)).join('<br>')}</p><small>Les autres voient seulement les conséquences que l’histoire rend visibles.</small></div><button class="button primary" data-action="talent-continue">Masquer et continuer</button>`
+    : `<div class="context-window"><small>POURQUOI MAINTENANT ?</small><p>Cette scène correspond réellement à ton talent. Tu peux l’utiliser maintenant ou le conserver pour une autre occasion.</p></div>${targetSelect}<button class="button primary" data-action="talent-use">Utiliser mon talent</button><button class="button secondary" data-action="talent-skip">Le conserver</button>`;
+  app.innerHTML = `<main class="shell private-shell"><section class="privacy-card private-power-card"><div class="privacy-icon">${player.ability.icon}</div><p class="kicker">TALENT SECRET · ${escapeHtml(event.title).toUpperCase()}</p><h2>${escapeHtml(player.ability.title)}</h2><p>${escapeHtml(player.ability.description)}</p>${confirmation}</section></main>`;
+}
 
-  app.innerHTML = `<main class="shell private-shell"><section class="privacy-card private-power-card"><div class="privacy-icon">${player.ability.icon}</div><p class="kicker">CAPACITÉ DE ${escapeHtml(player.name).toUpperCase()}</p><h2>${escapeHtml(player.ability.title)}</h2><p>${escapeHtml(player.ability.description)}</p><div class="role-card ${player.role.id === 'saboteur' ? 'danger-role' : ''}"><small>OBJECTIF PERSONNEL</small><strong>${escapeHtml(player.role.title)}</strong><p>${escapeHtml(player.role.briefing)}</p></div>${targetSelect}${confirmation}${player.ability.used ? '<div class="ability-used-private">Cette capacité a déjà été utilisée.</div>' : `<button class="button primary" data-use-private-ability="${player.id}">Utiliser secrètement maintenant</button>`}<button class="button secondary" data-action="ability-mask">Masquer et revenir à l’aventure</button></section></main>`;
+function renderAfterlifePrompt() {
+  const player = currentAfterlifePlayer();
+  const event = currentEvent();
+  if (!player?.afterlife?.active || !event) return advanceAfterlifeWindow();
+  if (!ui.afterlifeReady) {
+    app.innerHTML = `<main class="shell private-shell"><section class="privacy-card afterlife-card"><div class="privacy-icon">${player.afterlife.icon}</div><p class="kicker">PARCOURS SÉPARÉ</p><h2>Passe le téléphone à<br><span>${escapeHtml(player.name)}</span></h2><p>À zéro vie, la partie ne s’arrête pas. Cette personne agit désormais loin du groupe.</p><button class="button primary" data-action="afterlife-ready">Je suis ${escapeHtml(player.name)}</button></section></main>`;
+    return;
+  }
+
+  if (ui.afterlifePrivateResult) {
+    app.innerHTML = `<main class="shell private-shell"><section class="privacy-card afterlife-card"><div class="privacy-icon">${player.afterlife.icon}</div><p class="kicker">ACTION EFFECTUÉE DANS L’OMBRE</p><h2>${escapeHtml(player.afterlife.title)}</h2><div class="private-power-confirmation"><p>${ui.afterlifePrivateResult.summary.map((line) => escapeHtml(line)).join('<br>')}</p><small>Ton intervention ne sera pas attribuée publiquement.</small></div><button class="button primary" data-action="afterlife-continue">Masquer et continuer</button></section></main>`;
+    return;
+  }
+
+  const choices = getAfterlifeChoices(ui.game, player.id, event);
+  const targetChoices = getActivePlayers(ui.game).filter((target) => target.id !== player.id);
+  if (!ui.afterlifeTargetId) ui.afterlifeTargetId = targetChoices[0]?.id ?? null;
+  const needsTarget = choices.some((choice) => choice.requiresTarget);
+  const targetSelect = needsTarget && targetChoices.length
+    ? `<label class="field private-ability-target"><span>Cible possible</span><select data-afterlife-target>${targetChoices.map((target) => `<option value="${target.id}" ${ui.afterlifeTargetId === target.id ? 'selected' : ''}>${escapeHtml(target.name)}</option>`).join('')}</select></label>`
+    : '';
+  const cards = choices.map((choice) => `<button class="choice-card afterlife-choice" data-afterlife-action="${choice.id}"><span class="choice-icon">${choice.icon}</span><span class="choice-copy"><strong>${escapeHtml(choice.label)}</strong><small>${escapeHtml(choice.description)}</small></span><span class="choice-arrow">›</span></button>`).join('');
+  app.innerHTML = `<main class="shell private-shell"><header class="choice-header"><p class="kicker">ACTION SECRÈTE · CHAPITRE ${event.chapter}</p><h2>${escapeHtml(player.afterlife.title)}</h2><p>${escapeHtml(player.afterlife.briefing)}</p><div class="return-progress"><span>Retour vers le groupe</span><b>${Math.min(2, player.afterlife.returnProgress ?? 0)}/2</b></div></header>${targetSelect}<div class="choice-stack">${cards}</div></main>`;
 }
 
 
@@ -799,7 +953,7 @@ function renderEnding() {
   const stayed = ui.game.players.filter((player) => !ending.escapedIds.includes(player.id)).map((player) => player.name);
   const epilogue = getEndingNarrative(ui.game);
   const echoes = getStoryEchoes(ui.game);
-  const roleReveal = ui.game.players.map((player) => `<article class="reveal-player"><div class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</div><div><strong>${escapeHtml(player.name)}</strong><span>${escapeHtml(player.role.title)} · ${escapeHtml(player.ability.title)}</span><small>${player.lives} vie${player.lives > 1 ? 's' : ''} restante${player.lives > 1 ? 's' : ''}</small></div></article>`).join('');
+  const roleReveal = ui.game.players.map((player) => `<article class="reveal-player"><div class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</div><div><strong>${escapeHtml(player.name)}</strong><span>${escapeHtml(player.role.title)} · ${escapeHtml(player.ability.title)}${player.afterlife ? ` · ${escapeHtml(player.afterlife.title)}` : ''}</span><small>${player.lives} vie${player.lives > 1 ? 's' : ''} restante${player.lives > 1 ? 's' : ''}</small></div></article>`).join('');
   const betrayalReveal = (ui.game.betrayalLog ?? []).map((item) => {
     const actor = ui.game.players.find((player) => player.id === item.actorId)?.name ?? 'Une personne';
     const victim = ui.game.players.find((player) => player.id === item.targetId)?.name;
@@ -816,7 +970,7 @@ function renderEnding() {
       ${echoes.length ? `<section class="memory-panel"><p class="step">LES CHOIX QUI VOUS ONT SUIVIS</p><ul>${echoes.map((echo) => `<li>${escapeHtml(echo)}</li>`).join('')}</ul></section>` : ''}
       ${(betrayalReveal || brokenPromises) ? `<section class="betrayal-panel"><p class="step">PROMESSES ET TRAHISONS RÉVÉLÉES</p>${brokenPromises ? `<h3>Promesses brisées</h3><ul>${brokenPromises}</ul>` : ''}${betrayalReveal ? `<h3>Actions contre les autres</h3><ul>${betrayalReveal}</ul>` : ''}</section>` : ''}
       <section class="truth-panel"><p class="step">CE QUI S’EST RÉELLEMENT PASSÉ</p><h2>${escapeHtml(ui.game.plot.id === 'accident' ? 'Il n’y avait aucun traître.' : ui.game.plot.id === 'saboteur' ? 'Un saboteur se trouvait parmi vous.' : 'Une personne avait un objectif caché.')}</h2><p>${escapeHtml(ending.truth)}</p></section>
-      <section><div class="section-heading"><div><p class="step">RÉVÉLATION</p><h3>Rôles et capacités</h3></div></div><div class="reveal-list">${roleReveal}</div></section>
+      <section><div class="section-heading"><div><p class="step">RÉVÉLATION</p><h3>Rôles, talents et parcours séparés</h3></div></div><div class="reveal-list">${roleReveal}</div></section>
       <section class="ending-actions"><button class="button primary" data-action="replay">Rejouer avec le même groupe</button><button class="button secondary" data-action="finish-home">Retour aux aventures</button></section>
     </main>`;
 }
@@ -841,8 +995,8 @@ function render() {
   if (ui.screen === 'privateChoice') renderPrivateChoice();
   if (ui.screen === 'groupChoice') renderGroupChoice();
   if (ui.screen === 'result') renderResult();
-  if (ui.screen === 'abilitySelect') renderAbilitySelect();
-  if (ui.screen === 'abilityPrivate') renderAbilityPrivate();
+  if (ui.screen === 'talentPrompt') renderTalentPrompt();
+  if (ui.screen === 'afterlifePrompt') renderAfterlifePrompt();
   if (ui.screen === 'ending') renderEnding();
   applyVisualTheme();
   audioDirector.sync({ screen: ui.screen, game: ui.game, event: currentEvent(), settings: ui.settings });
@@ -854,10 +1008,7 @@ app.addEventListener('click', (event) => {
   const target = event.target.closest('button');
   if (!target) return;
   const action = target.dataset.action;
-  audioDirector.unlock().then((ready) => {
-    const quietActions = new Set(['home', 'open-crash', 'new-game', 'start-game', 'enter-chapter', 'begin-event', 'continue', 'resume', 'confirm-group', 'ability-select', 'ability-ready']);
-    if (ready && quietActions.has(action)) audioDirector.play('click', 0.28);
-  });
+  audioDirector.unlock();
   if (['new-game', 'open-crash', 'settings', 'rules', 'home', 'finish-home', 'replay', 'reset', 'delete-save'].includes(action)) clearCountdown();
 
   if (action === 'toggle-sound') {
@@ -927,23 +1078,12 @@ app.addEventListener('click', (event) => {
     else if (ui.game.chapterTransition) setScreen('chapter');
     else setScreen('game');
   }
-  if (action === 'ability-select') {
-    ui.abilityViewerId = null;
-    ui.abilityReady = false;
-    ui.abilityPrivateResult = null;
-    setScreen('abilitySelect');
-  }
-  if (action === 'ability-ready') {
-    ui.abilityReady = true;
-    audioDirector.play('reveal', 0.35);
-    render();
-  }
-  if (action === 'ability-mask') {
-    ui.abilityReady = false;
-    ui.abilityPrivateResult = null;
-    ui.abilityViewerId = null;
-    setScreen('game');
-  }
+  if (action === 'talent-ready') { ui.talentReady = true; render(); }
+  if (action === 'talent-use') useCurrentTalent();
+  if (action === 'talent-skip') skipCurrentTalent();
+  if (action === 'talent-continue') advanceTalentWindow();
+  if (action === 'afterlife-ready') { ui.afterlifeReady = true; render(); }
+  if (action === 'afterlife-continue') advanceAfterlifeWindow();
   if (action === 'back-game') setScreen('game');
   if (action === 'replay') replaySameGame();
   if (action === 'finish-home') setScreen('home');
@@ -965,28 +1105,22 @@ app.addEventListener('click', (event) => {
   }
 
   if (target.dataset.choice) {
-    audioDirector.play('select', 0.75);
+    audioDirector.play('select', 0.42);
     const choice = getAvailableChoices(ui.game, currentEvent(), currentPrivatePlayer().id).find((item) => item.id === target.dataset.choice);
     if (choice?.requiresTarget) {
       ui.pendingChoice = choice.id;
       render();
     } else submitPrivateChoice(target.dataset.choice);
   }
-  if (target.dataset.targetPlayer) { audioDirector.play('select', 0.75); submitPrivateChoice(ui.pendingChoice, target.dataset.targetPlayer); }
+  if (target.dataset.targetPlayer) { audioDirector.play('select', 0.42); submitPrivateChoice(ui.pendingChoice, target.dataset.targetPlayer); }
+  if (target.dataset.afterlifeAction) useAfterlifeAction(target.dataset.afterlifeAction);
   if (target.dataset.groupChoice) {
-    audioDirector.play('select', 0.75);
+    audioDirector.play('select', 0.42);
     ui.selectedGroupChoice = target.dataset.groupChoice;
     const selected = currentEvent().choices.find((choice) => choice.id === ui.selectedGroupChoice);
     if (selected?.requiresActor && !ui.actorId) ui.actorId = ui.game.players[0]?.id;
     render();
   }
-  if (target.dataset.abilityPlayer) {
-    ui.abilityViewerId = target.dataset.abilityPlayer;
-    ui.abilityReady = false;
-    ui.abilityPrivateResult = null;
-    setScreen('abilityPrivate');
-  }
-  if (target.dataset.usePrivateAbility) usePlayerAbility(target.dataset.usePrivateAbility);
 });
 
 app.addEventListener('input', (event) => {
@@ -1003,7 +1137,8 @@ app.addEventListener('input', (event) => {
 
 app.addEventListener('change', (event) => {
   if (event.target.matches('[data-actor]')) ui.actorId = event.target.value;
-  if (event.target.dataset.abilityTarget) ui.abilityTargets[event.target.dataset.abilityTarget] = event.target.value;
+  if (event.target.matches('[data-talent-target]')) ui.talentTargetId = event.target.value;
+  if (event.target.matches('[data-afterlife-target]')) ui.afterlifeTargetId = event.target.value;
   if (event.target.matches('[data-promise-player]')) {
     ui.promiseDraft.playerId = event.target.value;
     if (ui.promiseDraft.targetId === event.target.value) ui.promiseDraft.targetId = '';

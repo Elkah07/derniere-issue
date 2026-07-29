@@ -5,7 +5,7 @@ export const defaultSettings = {
   sound: true,
   ambience: true,
   sfx: true,
-  volume: 50,
+  volume: 42,
   vibrations: true,
   reducedMotion: false,
   cinematicFx: true,
